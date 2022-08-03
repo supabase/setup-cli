@@ -1,11 +1,11 @@
-name: 'Your name here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: setup-cli
+description: Setup Supabase CLI, supabase, on GitHub Actions runners
+author: Supabase
 inputs:
-  milliseconds: # change this
-    required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+  version:
+    description: Version of Supabase CLI to install
+    required: false
+    default: 0.32.1
 runs:
-  using: 'node16'
-  main: 'dist/index.js'
+  using: node16
+  main: dist/index.js

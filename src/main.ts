@@ -1,16 +1,22 @@
 import * as core from '@actions/core'
-import {wait} from './wait'
+import * as tc from '@actions/tool-cache'
+import * as path from 'path'
+import {getDownloadObject} from './utils'
 
 async function run(): Promise<void> {
   try {
-    const ms: string = core.getInput('milliseconds')
-    core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
+    // Get version of tool to be installed
+    const version = core.getInput('version')
 
-    core.debug(new Date().toTimeString())
-    await wait(parseInt(ms, 10))
-    core.debug(new Date().toTimeString())
+    // Download the specific version of the tool, e.g. as a tarball/zipball
+    const download = getDownloadObject(version)
+    const pathToTarball = await tc.downloadTool(download.url)
 
-    core.setOutput('time', new Date().toTimeString())
+    // Extract the tarball/zipball onto host runner
+    const pathToCLI = await tc.extractTar(pathToTarball)
+
+    // Expose the tool by adding it to the PATH
+    core.addPath(path.join(pathToCLI, download.binPath))
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }
