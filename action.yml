@@ -1,4 +1,4 @@
-name: setup-cli
+name: Supabase CLI Action
 description: Setup Supabase CLI, supabase, on GitHub Actions runners
 author: Supabase
 inputs:
@@ -7,5 +7,5 @@ inputs:
     required: false
     default: 0.32.1
 runs:
-  using: node16
+  using: node18
   main: dist/index.js
