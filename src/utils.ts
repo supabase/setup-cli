@@ -1,5 +1,4 @@
 import os from 'os'
-import * as path from 'path'
 
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
@@ -23,6 +22,5 @@ export const getDownloadUrl = (version: string): string => {
   const platform = mapOS(os.platform())
   const arch = mapArch(os.arch())
   const filename = `supabase_${version}_${platform}_${arch}`
-  const url = `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`
-  return url
+  return `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`
 }

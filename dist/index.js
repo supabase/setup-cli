@@ -41,7 +41,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(186));
 const tc = __importStar(__nccwpck_require__(784));
-const path = __importStar(__nccwpck_require__(17));
 const utils_1 = __nccwpck_require__(918);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -49,12 +48,12 @@ function run() {
             // Get version of tool to be installed
             const version = core.getInput('version');
             // Download the specific version of the tool, e.g. as a tarball/zipball
-            const download = (0, utils_1.getDownloadObject)(version);
-            const pathToTarball = yield tc.downloadTool(download.url);
+            const download = (0, utils_1.getDownloadUrl)(version);
+            const pathToTarball = yield tc.downloadTool(download);
             // Extract the tarball/zipball onto host runner
             const pathToCLI = yield tc.extractTar(pathToTarball);
             // Expose the tool by adding it to the PATH
-            core.addPath(path.join(pathToCLI, download.binPath));
+            core.addPath(pathToCLI);
         }
         catch (error) {
             if (error instanceof Error)
@@ -72,36 +71,12 @@ run();
 
 "use strict";
 
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getDownloadObject = void 0;
+exports.getDownloadUrl = void 0;
 const os_1 = __importDefault(__nccwpck_require__(37));
-const path = __importStar(__nccwpck_require__(17));
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
 const mapArch = (arch) => {
@@ -118,18 +93,13 @@ const mapOS = (platform) => {
     };
     return mappings[platform] || platform;
 };
-const getDownloadObject = (version) => {
+const getDownloadUrl = (version) => {
     const platform = mapOS(os_1.default.platform());
     const arch = mapArch(os_1.default.arch());
     const filename = `supabase_${version}_${platform}_${arch}`;
-    const binPath = platform === 'windows' ? 'bin' : path.join(filename, 'bin');
-    const url = `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`;
-    return {
-        url,
-        binPath
-    };
+    return `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`;
 };
-exports.getDownloadObject = getDownloadObject;
+exports.getDownloadUrl = getDownloadUrl;
 
 
 /***/ }),
