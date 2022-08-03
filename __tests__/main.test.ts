@@ -1,4 +1,4 @@
-import {getDownloadObject} from '../src/utils'
+import {getDownloadUrl} from '../src/utils'
 import * as os from 'os'
 import * as process from 'process'
 import * as cp from 'child_process'
@@ -6,8 +6,8 @@ import * as path from 'path'
 import {expect, test} from '@jest/globals'
 
 test('returns download path to binary', async () => {
-  const link = getDownloadObject('0.1.0')
-  expect(link.url).toContain(
+  const url = getDownloadUrl('0.1.0')
+  expect(url).toContain(
     'https://github.com/supabase/cli/releases/download/v0.1.0/'
   )
 })

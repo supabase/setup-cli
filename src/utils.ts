@@ -19,16 +19,10 @@ const mapOS = (platform: string): string => {
   return mappings[platform] || platform
 }
 
-export const getDownloadObject = (
-  version: string
-): {url: string; binPath: string} => {
+export const getDownloadUrl = (version: string): string => {
   const platform = mapOS(os.platform())
   const arch = mapArch(os.arch())
   const filename = `supabase_${version}_${platform}_${arch}`
-  const binPath = platform === 'windows' ? 'bin' : path.join(filename, 'bin')
   const url = `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`
-  return {
-    url,
-    binPath
-  }
+  return url
 }
