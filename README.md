@@ -27,7 +27,7 @@ steps:
       version: 0.34.2
 ```
 
-Running `supabase start` applies all committed migrations on a fresh database:
+Run `supabase start` to execute all migrations on a fresh database:
 
 ```yaml
 steps:
@@ -38,7 +38,7 @@ steps:
   - run: supabase start
 ```
 
-> Since Supabase CLI relies on Docker Engine API, additional setup may be required on Windows and macOS runners.
+Since Supabase CLI relies on Docker Engine API, additional setup may be required on Windows and macOS runners.
 
 ## Inputs
 
