@@ -24,14 +24,56 @@ A specific version of the `supabase` CLI can be installed:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 0.32.1
+      version: 0.34.2
 ```
+
+Run `supabase start` to execute all migrations on a fresh database:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v1
+    with:
+      version: 0.34.2
+  - run: supabase init
+  - run: supabase start
+```
+
+Since Supabase CLI relies on Docker Engine API, additional setup may be required on Windows and macOS runners.
 
 ## Inputs
 
 The actions supports the following inputs:
 
-- `version`: The version of `supabase` to install, defaulting to `0.32.1`
+- `version`: The version of `supabase` to install, defaulting to `0.34.2`
+
+## Advanced Usage
+
+Check generated TypeScript types are up-to-date with Postgres schema:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v1
+  - run: supabase init
+  - run: supabase start
+  - name: Verify generated types match Postgres schema
+    run: |
+      supabase gen types typescript --local > schema.gen.ts
+      if [ "$(git diff --ignore-space-at-eol schema.gen.ts | wc -l)" -gt "0" ]; then
+        echo "Detected uncommitted changes after build. See status below:"
+        git diff
+        exit 1
+      fi
+```
+
+Release job to push schema changes to a Supabase project:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v1
+  - run: supabase init
+  - run: supabase db remote set ${{ secrets.DB_URL }}
+  - run: supabase db push
+```
 
 ## Develop
 
@@ -87,7 +129,7 @@ You can now validate the action by referencing `./` in a workflow in your repo (
 ```yaml
 uses: ./
 with:
-  version: 0.32.1
+  version: 0.34.2
 ```
 
 See the [actions tab](https://github.com/actions/typescript-action/actions) for runs of this action! :rocket:
