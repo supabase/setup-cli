@@ -51,14 +51,28 @@ The actions supports the following inputs:
 Check generated TypeScript types are up-to-date with Postgres schema:
 
 ```yaml
-- name: Verify generated types are checked in
-  run: |
-    supabase gen types typescript --local > schema.gen.ts
-    if [ "$(git diff --ignore-space-at-eol schema.gen.ts | wc -l)" -gt "0" ]; then
-      echo "Detected uncommitted changes after build. See status below:"
-      git diff
-      exit 1
-    fi
+steps:
+  - uses: supabase/setup-cli@v1
+  - run: supabase init
+  - run: supabase start
+  - name: Verify generated types match Postgres schema
+    run: |
+      supabase gen types typescript --local > schema.gen.ts
+      if [ "$(git diff --ignore-space-at-eol schema.gen.ts | wc -l)" -gt "0" ]; then
+        echo "Detected uncommitted changes after build. See status below:"
+        git diff
+        exit 1
+      fi
+```
+
+Release job to push schema changes to a Supabase project:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v1
+  - run: supabase init
+  - run: supabase db remote set ${{ secrets.DB_URL }}
+  - run: supabase db push
 ```
 
 ## Develop
