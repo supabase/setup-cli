@@ -29,3 +29,11 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - run: supabase -h
+  check:
+    if: ${{ always() && github.event.pull_request }}
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - run: |
+          result="${{ needs.test.result }}"
+          [[ $result == "success" || $result == "skipped" ]]
