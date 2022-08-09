@@ -1,5 +1,5 @@
 # Adapted from https://blog.somewhatabstract.com/2021/10/11/setting-up-dependabot-with-github-actions-to-approve-and-merge/
-name: Dependabot Pull Request Approve and Merge
+name: Dependabot auto-merge
 
 on: pull_request_target
 
@@ -34,7 +34,7 @@ jobs:
       # updates if all checks pass
       - name: Enable auto-merge for Dependabot PRs
         if: ${{ steps.dependabot-metadata.outputs.update-type != 'version-update:semver-major' }}
-        run: gh pr merge --auto --rebase "$PR_URL"
+        run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
