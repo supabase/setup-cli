@@ -71,6 +71,7 @@ Release job to push schema changes to a Supabase project:
 env:
   SUPABASE_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
   SUPABASE_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  # Retrieve <project-id> from dashboard url: https://app.supabase.com/project/<project-id>
   PROJECT_ID: <project-id>
 
  steps:
