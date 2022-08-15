@@ -24,7 +24,7 @@ A specific version of the `supabase` CLI can be installed:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 0.34.2
+      version: 1.0.0
 ```
 
 Run `supabase start` to execute all migrations on a fresh database:
@@ -33,7 +33,7 @@ Run `supabase start` to execute all migrations on a fresh database:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 0.34.2
+      version: 1.0.0
   - run: supabase init
   - run: supabase start
 ```
@@ -44,7 +44,7 @@ Since Supabase CLI relies on Docker Engine API, additional setup may be required
 
 The actions supports the following inputs:
 
-- `version`: The version of `supabase` to install, defaulting to `0.34.2`
+- `version`: The version of `supabase` to install, defaulting to `1.0.0`
 
 ## Advanced Usage
 
@@ -129,7 +129,7 @@ You can now validate the action by referencing `./` in a workflow in your repo (
 ```yaml
 uses: ./
 with:
-  version: 0.34.2
+  version: 1.0.0
 ```
 
 See the [actions tab](https://github.com/actions/typescript-action/actions) for runs of this action! :rocket:
