@@ -68,11 +68,15 @@ steps:
 Release job to push schema changes to a Supabase project:
 
 ```yaml
-steps:
-  - uses: supabase/setup-cli@v1
-  - run: supabase init
-  - run: supabase db remote set ${{ secrets.DB_URL }}
-  - run: supabase db push
+env:
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  PROJECT_ID: <project-id>
+
+ steps:
+   - uses: supabase/setup-cli@v1
+   - run: supabase link --project-ref $PROJECT_ID
+   - run: supabase db push
 ```
 
 ## Develop
