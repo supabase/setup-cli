@@ -20,6 +20,7 @@ jobs:
   test: # make sure the action works on a clean machine without building
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
         version: [1.0.0, 1.5.0]
