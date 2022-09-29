@@ -28,6 +28,7 @@ jobs:
       - uses: ./
         with:
           version: ${{ matrix.version }}
+      - run: supabase init
       - run: supabase start
   check:
     if: ${{ always() && github.event.pull_request }}
