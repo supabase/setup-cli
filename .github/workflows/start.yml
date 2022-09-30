@@ -1,0 +1,30 @@
+name: CLI Start
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    - cron: '30 1,9 * * *'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  e2e: # make sure the action works on a clean machine without building
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version:
+          - 1.0.0
+          - 1.5.1
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        with:
+          version: ${{ matrix.version }}
+      - run: supabase init
+      - run: supabase start

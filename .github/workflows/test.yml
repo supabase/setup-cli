@@ -4,7 +4,6 @@ on: # rebuild any PRs and main branch changes
   push:
     branches:
       - main
-      - 'releases/*'
 
 defaults:
   run:
@@ -22,7 +21,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
-        version: [1.0.0]
+        version: [1.0.0, 1.5.1]
     steps:
       - uses: actions/checkout@v3
       - uses: ./
