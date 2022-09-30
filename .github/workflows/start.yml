@@ -7,7 +7,7 @@ on:
       - 'v*'
   schedule:
     # * is a special character in YAML so you have to quote this string
-    - cron: '30 1,9 * * *'
+    - cron: '15 * * * *'
 
 defaults:
   run:
@@ -19,7 +19,7 @@ jobs:
     strategy:
       matrix:
         version:
-          - 1.0.0
+          # - 1.0.0
           - 1.5.3
     steps:
       - uses: actions/checkout@v3
