@@ -20,7 +20,7 @@ jobs:
       matrix:
         version:
           - 1.0.0
-          - 1.5.2
+          - 1.5.3
     steps:
       - uses: actions/checkout@v3
       - uses: ./
