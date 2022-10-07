@@ -58,7 +58,7 @@ steps:
   - name: Verify generated types match Postgres schema
     run: |
       supabase gen types typescript --local > schema.gen.ts
-      if [ "$(git diff --ignore-space-at-eol schema.gen.ts | wc -l)" -gt "0" ]; then
+      if ! git diff --ignore-space-at-eol --exit-code --quiet schema.gen.ts; then
         echo "Detected uncommitted changes after build. See status below:"
         git diff
         exit 1
