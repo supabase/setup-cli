@@ -44,7 +44,7 @@ Since Supabase CLI relies on Docker Engine API, additional setup may be required
 
 The actions supports the following inputs:
 
-- `version`: The version of `supabase` to install, defaulting to `1.0.0`
+- `version`: The version of `supabase` to install, defaulting to `1.0.0`. You can also specify `latest` to use the latest version.
 
 ## Advanced Usage
 

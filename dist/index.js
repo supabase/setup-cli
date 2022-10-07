@@ -48,7 +48,7 @@ function run() {
             // Get version of tool to be installed
             const version = core.getInput('version');
             // Download the specific version of the tool, e.g. as a tarball/zipball
-            const download = (0, utils_1.getDownloadUrl)(version);
+            const download = yield (0, utils_1.getDownloadUrl)(version);
             const pathToTarball = yield tc.downloadTool(download);
             // Extract the tarball/zipball onto host runner
             const pathToCLI = yield tc.extractTar(pathToTarball);
@@ -71,12 +71,45 @@ run();
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getDownloadUrl = void 0;
 const os_1 = __importDefault(__nccwpck_require__(2037));
+const httpm = __importStar(__nccwpck_require__(6255));
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
 const mapArch = (arch) => {
@@ -93,13 +126,27 @@ const mapOS = (platform) => {
     };
     return mappings[platform] || platform;
 };
-const getDownloadUrl = (version) => {
+const getDownloadUrl = (version) => __awaiter(void 0, void 0, void 0, function* () {
     const platform = mapOS(os_1.default.platform());
     const arch = mapArch(os_1.default.arch());
-    const filename = `supabase_${version}_${platform}_${arch}`;
-    return `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`;
-};
+    const resolvedVersion = yield resolveVersion(version);
+    const filename = `supabase_${resolvedVersion}_${platform}_${arch}`;
+    return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`;
+});
 exports.getDownloadUrl = getDownloadUrl;
+const resolveVersion = (version) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    if (version !== 'latest') {
+        return version;
+    }
+    const http = new httpm.HttpClient('setup-cli');
+    const url = 'https://api.github.com/repos/supabase/cli/releases/latest';
+    const tag = (_a = (yield http.getJson(url)).result) === null || _a === void 0 ? void 0 : _a.tag_name;
+    if (!tag) {
+        throw new Error('Cannot fetch tag info');
+    }
+    return tag.substring(1);
+});
 
 
 /***/ }),
