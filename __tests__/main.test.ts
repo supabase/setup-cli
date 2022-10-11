@@ -6,9 +6,16 @@ import * as path from 'path'
 import {expect, test} from '@jest/globals'
 
 test('gets download url to binary', async () => {
-  const url = getDownloadUrl('0.1.0')
+  const url = await getDownloadUrl('0.1.0')
   expect(url).toContain(
     'https://github.com/supabase/cli/releases/download/v0.1.0/'
+  )
+})
+
+test('gets download url to binary with "latest" version', async () => {
+  const url = await getDownloadUrl('latest')
+  expect(url).toMatch(
+    /^https:\/\/github.com\/supabase\/cli\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/supabase_[0-9]+\.[0-9]+\.[0-9]+/
   )
 })
 

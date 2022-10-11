@@ -1,4 +1,9 @@
 import os from 'os'
+import * as httpm from '@actions/http-client'
+
+interface GitHubTag {
+  tag_name: string
+}
 
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
@@ -18,9 +23,26 @@ const mapOS = (platform: string): string => {
   return mappings[platform] || platform
 }
 
-export const getDownloadUrl = (version: string): string => {
+export const getDownloadUrl = async (version: string): Promise<string> => {
   const platform = mapOS(os.platform())
   const arch = mapArch(os.arch())
-  const filename = `supabase_${version}_${platform}_${arch}`
-  return `https://github.com/supabase/cli/releases/download/v${version}/${filename}.tar.gz`
+  const resolvedVersion = await resolveVersion(version)
+  const filename = `supabase_${resolvedVersion}_${platform}_${arch}`
+
+  return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`
+}
+
+const resolveVersion = async (version: string): Promise<string> => {
+  if (version !== 'latest') {
+    return version
+  }
+
+  const http: httpm.HttpClient = new httpm.HttpClient('setup-cli')
+  const url = 'https://api.github.com/repos/supabase/cli/releases/latest'
+  const tag = (await http.getJson<GitHubTag>(url)).result?.tag_name
+  if (!tag) {
+    throw new Error('Cannot fetch tag info')
+  }
+
+  return tag.substring(1)
 }
