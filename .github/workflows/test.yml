@@ -9,9 +9,6 @@ defaults:
   run:
     shell: bash
 
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   build: # make sure build/ci work properly
     runs-on: ubuntu-latest
