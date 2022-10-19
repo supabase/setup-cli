@@ -137,7 +137,7 @@ const getDownloadUrl = (version) => __awaiter(void 0, void 0, void 0, function* 
 exports.getDownloadUrl = getDownloadUrl;
 // Ref: https://github.com/actions/toolkit/blob/main/packages/cache/src/internal/cacheHttpClient.ts#L62
 const http = new httpm.HttpClient('setup-cli', [
-    new auth_1.BearerCredentialHandler(process.env['ACTIONS_RUNTIME_TOKEN'] || '')
+    new auth_1.BearerCredentialHandler(process.env['GH_TOKEN'] || '')
 ]);
 const resolveVersion = (version) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;

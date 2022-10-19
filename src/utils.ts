@@ -35,7 +35,7 @@ export const getDownloadUrl = async (version: string): Promise<string> => {
 
 // Ref: https://github.com/actions/toolkit/blob/main/packages/cache/src/internal/cacheHttpClient.ts#L62
 const http: httpm.HttpClient = new httpm.HttpClient('setup-cli', [
-  new BearerCredentialHandler(process.env['ACTIONS_RUNTIME_TOKEN'] || '')
+  new BearerCredentialHandler(process.env['GH_TOKEN'] || '')
 ])
 
 const resolveVersion = async (version: string): Promise<string> => {
