@@ -1,5 +1,5 @@
 import os from 'os'
-import * as httpm from '@actions/http-client'
+import {HttpClient} from '@actions/http-client'
 import {BearerCredentialHandler} from '@actions/http-client/lib/auth'
 
 interface GitHubTag {
@@ -35,7 +35,7 @@ export const getDownloadUrl = async (version: string): Promise<string> => {
 
 // Authenticate with GH_TOKEN to avoid GitHub API rate limits
 const token = process.env['GH_TOKEN']
-const http: httpm.HttpClient = new httpm.HttpClient(
+const http = new HttpClient(
   'supabase/setup-cli',
   token ? [new BearerCredentialHandler(token)] : undefined
 )
