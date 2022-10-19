@@ -110,6 +110,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getDownloadUrl = void 0;
 const os_1 = __importDefault(__nccwpck_require__(2037));
 const httpm = __importStar(__nccwpck_require__(6255));
+const auth_1 = __nccwpck_require__(5526);
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
 const mapArch = (arch) => {
@@ -134,12 +135,15 @@ const getDownloadUrl = (version) => __awaiter(void 0, void 0, void 0, function* 
     return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`;
 });
 exports.getDownloadUrl = getDownloadUrl;
+// Ref: https://github.com/actions/toolkit/blob/main/packages/cache/src/internal/cacheHttpClient.ts#L62
+const http = new httpm.HttpClient('setup-cli', [
+    new auth_1.BearerCredentialHandler(process.env['ACTIONS_RUNTIME_TOKEN'] || '')
+]);
 const resolveVersion = (version) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     if (version !== 'latest') {
         return version;
     }
-    const http = new httpm.HttpClient('setup-cli');
     const url = 'https://api.github.com/repos/supabase/cli/releases/latest';
     const tag = (_a = (yield http.getJson(url)).result) === null || _a === void 0 ? void 0 : _a.tag_name;
     if (!tag) {
