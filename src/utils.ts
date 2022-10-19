@@ -33,10 +33,12 @@ export const getDownloadUrl = async (version: string): Promise<string> => {
   return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`
 }
 
-// Ref: https://github.com/actions/toolkit/blob/main/packages/cache/src/internal/cacheHttpClient.ts#L62
-const http: httpm.HttpClient = new httpm.HttpClient('setup-cli', [
-  new BearerCredentialHandler(process.env['GH_TOKEN'] || '')
-])
+// Authenticate with GH_TOKEN to avoid GitHub API rate limits
+const token = process.env['GH_TOKEN']
+const http: httpm.HttpClient = new httpm.HttpClient(
+  'supabase/setup-cli',
+  token ? [new BearerCredentialHandler(token)] : undefined
+)
 
 const resolveVersion = async (version: string): Promise<string> => {
   if (version !== 'latest') {

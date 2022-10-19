@@ -135,10 +135,9 @@ const getDownloadUrl = (version) => __awaiter(void 0, void 0, void 0, function* 
     return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`;
 });
 exports.getDownloadUrl = getDownloadUrl;
-// Ref: https://github.com/actions/toolkit/blob/main/packages/cache/src/internal/cacheHttpClient.ts#L62
-const http = new httpm.HttpClient('setup-cli', [
-    new auth_1.BearerCredentialHandler(process.env['GH_TOKEN'] || '')
-]);
+// Authenticate with GH_TOKEN to avoid GitHub API rate limits
+const token = process.env['GH_TOKEN'];
+const http = new httpm.HttpClient('supabase/setup-cli', token ? [new auth_1.BearerCredentialHandler(token)] : undefined);
 const resolveVersion = (version) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     if (version !== 'latest') {
