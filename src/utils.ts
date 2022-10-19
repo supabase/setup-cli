@@ -1,5 +1,6 @@
 import os from 'os'
-import * as httpm from '@actions/http-client'
+import {HttpClient} from '@actions/http-client'
+import {BearerCredentialHandler} from '@actions/http-client/lib/auth'
 
 interface GitHubTag {
   tag_name: string
@@ -32,12 +33,18 @@ export const getDownloadUrl = async (version: string): Promise<string> => {
   return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`
 }
 
+// Authenticate with GH_TOKEN to avoid GitHub API rate limits
+const token = process.env['GH_TOKEN']
+const http = new HttpClient(
+  'supabase/setup-cli',
+  token ? [new BearerCredentialHandler(token)] : undefined
+)
+
 const resolveVersion = async (version: string): Promise<string> => {
   if (version !== 'latest') {
     return version
   }
 
-  const http: httpm.HttpClient = new httpm.HttpClient('setup-cli')
   const url = 'https://api.github.com/repos/supabase/cli/releases/latest'
   const tag = (await http.getJson<GitHubTag>(url)).result?.tag_name
   if (!tag) {
