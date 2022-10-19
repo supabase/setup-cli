@@ -13,6 +13,9 @@ defaults:
   run:
     shell: bash
 
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   e2e: # make sure the action works on a clean machine without building
     runs-on: ubuntu-latest
@@ -20,7 +23,6 @@ jobs:
       matrix:
         version:
           - 1.0.0
-          - 1.5.4
           - latest
     steps:
       - uses: actions/checkout@v3
