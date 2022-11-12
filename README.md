@@ -33,7 +33,7 @@ Run `supabase start` to execute all migrations on a fresh database:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 1.0.0
+      version: 1.12.2
   - run: supabase init
   - run: supabase start
 ```
@@ -134,7 +134,7 @@ You can now validate the action by referencing `./` in a workflow in your repo (
 ```yaml
 uses: ./
 with:
-  version: 1.0.0
+  version: 1.12.2
 ```
 
 See the [actions tab](https://github.com/actions/typescript-action/actions) for runs of this action! :rocket:
