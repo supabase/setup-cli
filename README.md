@@ -24,18 +24,18 @@ A specific version of the `supabase` CLI can be installed:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 1.12.2
+      version: 1.16.1
 ```
 
-Run `supabase start` to execute all migrations on a fresh database:
+Run `supabase db start` to execute all migrations on a fresh database:
 
 ```yaml
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 1.12.2
+      version: 1.16.1
   - run: supabase init
-  - run: supabase start
+  - run: supabase db start
 ```
 
 Since Supabase CLI relies on Docker Engine API, additional setup may be required on Windows and macOS runners.
@@ -54,7 +54,7 @@ Check generated TypeScript types are up-to-date with Postgres schema:
 steps:
   - uses: supabase/setup-cli@v1
   - run: supabase init
-  - run: supabase start
+  - run: supabase db start
   - name: Verify generated types match Postgres schema
     run: |
       supabase gen types typescript --local > schema.gen.ts
@@ -134,7 +134,7 @@ You can now validate the action by referencing `./` in a workflow in your repo (
 ```yaml
 uses: ./
 with:
-  version: 1.12.2
+  version: 1.16.1
 ```
 
 See the [actions tab](https://github.com/actions/typescript-action/actions) for runs of this action! :rocket:
