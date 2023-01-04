@@ -4,7 +4,7 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   schedule:
     # * is a special character in YAML so you have to quote this string
     - cron: '30 1,9 * * *'
@@ -12,9 +12,6 @@ on:
 defaults:
   run:
     shell: bash
-
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   e2e: # make sure the action works on a clean machine without building
