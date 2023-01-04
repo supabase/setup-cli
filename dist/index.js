@@ -54,6 +54,8 @@ function run() {
             const pathToCLI = yield tc.extractTar(pathToTarball);
             // Expose the tool by adding it to the PATH
             core.addPath(pathToCLI);
+            // Use GHCR mirror by default
+            core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io');
         }
         catch (error) {
             if (error instanceof Error)
