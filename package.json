@@ -26,11 +26,12 @@
   "license": "MIT",
   "dependencies": {
     "@actions/core": "^1.10.0",
-    "@actions/http-client": "^2.0.1",
-    "@actions/tool-cache": "^2.0.1"
+    "@actions/tool-cache": "^2.0.1",
+    "semver": "^7.3.8"
   },
   "devDependencies": {
     "@types/node": "^16.11.47",
+    "@types/semver": "^7.3.13",
     "@typescript-eslint/parser": "^5.48.0",
     "@vercel/ncc": "^0.36.0",
     "eslint": "^8.31.0",

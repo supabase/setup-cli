@@ -6,16 +6,30 @@ import * as path from 'path'
 import {expect, test} from '@jest/globals'
 
 test('gets download url to binary', async () => {
-  const url = await getDownloadUrl('0.1.0')
-  expect(url).toContain(
-    'https://github.com/supabase/cli/releases/download/v0.1.0/'
-  )
+  const url = await getDownloadUrl('1.28.0')
+  expect(
+    url.startsWith(
+      'https://github.com/supabase/cli/releases/download/v1.28.0/supabase_'
+    )
+  ).toBeTruthy()
+  expect(url.endsWith('.tar.gz')).toBeTruthy()
+  expect(url).not.toContain('_1.28.0_')
 })
 
-test('gets download url to binary with "latest" version', async () => {
+test('gets legacy download url to binary', async () => {
+  const url = await getDownloadUrl('0.1.0')
+  expect(
+    url.startsWith(
+      `https://github.com/supabase/cli/releases/download/v0.1.0/supabase_0.1.0_`
+    )
+  ).toBeTruthy()
+  expect(url.endsWith('.tar.gz')).toBeTruthy()
+})
+
+test('gets download url to latest version', async () => {
   const url = await getDownloadUrl('latest')
   expect(url).toMatch(
-    /^https:\/\/github.com\/supabase\/cli\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/supabase_[0-9]+\.[0-9]+\.[0-9]+/
+    'https://github.com/supabase/cli/releases/latest/download/'
   )
 })
 
