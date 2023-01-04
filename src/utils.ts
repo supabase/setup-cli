@@ -1,10 +1,5 @@
 import os from 'os'
-import {HttpClient} from '@actions/http-client'
-import {BearerCredentialHandler} from '@actions/http-client/lib/auth'
-
-interface GitHubTag {
-  tag_name: string
-}
+import lt from 'semver/functions/lt'
 
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
@@ -27,29 +22,12 @@ const mapOS = (platform: string): string => {
 export const getDownloadUrl = async (version: string): Promise<string> => {
   const platform = mapOS(os.platform())
   const arch = mapArch(os.arch())
-  const resolvedVersion = await resolveVersion(version)
-  const filename = `supabase_${resolvedVersion}_${platform}_${arch}`
-
-  return `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}.tar.gz`
-}
-
-// Authenticate with GH_TOKEN to avoid GitHub API rate limits
-const token = process.env['GH_TOKEN']
-const http = new HttpClient(
-  'supabase/setup-cli',
-  token ? [new BearerCredentialHandler(token)] : undefined
-)
-
-const resolveVersion = async (version: string): Promise<string> => {
-  if (version !== 'latest') {
-    return version
+  const filename = `supabase_${platform}_${arch}.tar.gz`
+  if (version.toLowerCase() === 'latest') {
+    return `https://github.com/supabase/cli/releases/latest/download/${filename}`
   }
-
-  const url = 'https://api.github.com/repos/supabase/cli/releases/latest'
-  const tag = (await http.getJson<GitHubTag>(url)).result?.tag_name
-  if (!tag) {
-    throw new Error('Cannot fetch tag info')
+  if (lt(version, '1.28.0')) {
+    return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`
   }
-
-  return tag.substring(1)
+  return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`
 }
