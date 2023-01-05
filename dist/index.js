@@ -38,9 +38,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(2186));
 const tc = __importStar(__nccwpck_require__(7784));
+const lt_1 = __importDefault(__nccwpck_require__(194));
 const utils_1 = __nccwpck_require__(918);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -55,7 +59,9 @@ function run() {
             // Expose the tool by adding it to the PATH
             core.addPath(pathToCLI);
             // Use GHCR mirror by default
-            core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io');
+            if (version.toLowerCase() === 'latest' || (0, lt_1.default)(version, '1.28.0')) {
+                core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io');
+            }
         }
         catch (error) {
             if (error instanceof Error)
