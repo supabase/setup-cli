@@ -1,5 +1,6 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
+import gte from 'semver/functions/lt'
 import {getDownloadUrl} from './utils'
 
 async function run(): Promise<void> {
@@ -18,7 +19,9 @@ async function run(): Promise<void> {
     core.addPath(pathToCLI)
 
     // Use GHCR mirror by default
-    core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io')
+    if (version.toLowerCase() === 'latest' || gte(version, '1.28.0')) {
+      core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io')
+    }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }
