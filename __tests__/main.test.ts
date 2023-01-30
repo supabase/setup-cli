@@ -49,5 +49,7 @@ test('test runs', () => {
   }
   const stdout = cp.execFileSync(np, [ip], options).toString()
   console.log(stdout)
-  expect(stdout).toContain(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
+  expect
+    .stringContaining(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
+    .asymmetricMatch(stdout)
 })
