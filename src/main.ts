@@ -1,6 +1,6 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
-import gte from 'semver/functions/lt'
+import gte from 'semver/functions/gte'
 import {getDownloadUrl} from './utils'
 
 async function run(): Promise<void> {
