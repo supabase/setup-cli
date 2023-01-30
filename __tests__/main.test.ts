@@ -1,4 +1,5 @@
 import {getDownloadUrl} from '../src/utils'
+import {CLI_CONFIG_REGISTRY} from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
 import * as cp from 'child_process'
@@ -36,11 +37,12 @@ test('gets download url to latest version', async () => {
 // shows how the runner will run a javascript action with env / stdout protocol
 test('test runs', () => {
   process.env['RUNNER_TEMP'] = os.tmpdir()
-  process.env['INPUT_VERSION'] = '1.0.0'
   const np = process.execPath
   const ip = path.join(__dirname, '..', 'lib', 'main.js')
   const options: cp.ExecFileSyncOptions = {
     env: process.env
   }
-  console.log(cp.execFileSync(np, [ip], options).toString())
+  const stdout = cp.execFileSync(np, [ip], options).toString()
+  console.log(stdout)
+  expect(stdout).toContain(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
 })
