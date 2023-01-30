@@ -1,8 +1,11 @@
 import {getDownloadUrl} from '../src/utils'
+import {CLI_CONFIG_REGISTRY} from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
 import * as cp from 'child_process'
 import * as path from 'path'
+import * as fs from 'fs'
+import * as yaml from 'js-yaml'
 import {expect, test} from '@jest/globals'
 
 test('gets download url to binary', async () => {
@@ -36,11 +39,17 @@ test('gets download url to latest version', async () => {
 // shows how the runner will run a javascript action with env / stdout protocol
 test('test runs', () => {
   process.env['RUNNER_TEMP'] = os.tmpdir()
-  process.env['INPUT_VERSION'] = '1.0.0'
+  const config = path.join(__dirname, '..', 'action.yml')
+  const action: any = yaml.load(fs.readFileSync(config, 'utf8'))
+  process.env['INPUT_VERSION'] = action.inputs.version.default
   const np = process.execPath
   const ip = path.join(__dirname, '..', 'lib', 'main.js')
   const options: cp.ExecFileSyncOptions = {
     env: process.env
   }
-  console.log(cp.execFileSync(np, [ip], options).toString())
+  const stdout = cp.execFileSync(np, [ip], options).toString()
+  console.log(stdout)
+  expect
+    .stringContaining(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
+    .asymmetricMatch(stdout)
 })

@@ -42,10 +42,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.CLI_CONFIG_REGISTRY = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const tc = __importStar(__nccwpck_require__(7784));
-const lt_1 = __importDefault(__nccwpck_require__(194));
+const gte_1 = __importDefault(__nccwpck_require__(5522));
 const utils_1 = __nccwpck_require__(918);
+exports.CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY';
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
@@ -59,8 +61,8 @@ function run() {
             // Expose the tool by adding it to the PATH
             core.addPath(pathToCLI);
             // Use GHCR mirror by default
-            if (version.toLowerCase() === 'latest' || (0, lt_1.default)(version, '1.28.0')) {
-                core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io');
+            if (version.toLowerCase() === 'latest' || (0, gte_1.default)(version, '1.28.0')) {
+                core.exportVariable(exports.CLI_CONFIG_REGISTRY, 'ghcr.io');
             }
         }
         catch (error) {
@@ -6604,6 +6606,16 @@ const compare = (a, b, loose) =>
   new SemVer(a, loose).compare(new SemVer(b, loose))
 
 module.exports = compare
+
+
+/***/ }),
+
+/***/ 5522:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const compare = __nccwpck_require__(4309)
+const gte = (a, b, loose) => compare(a, b, loose) >= 0
+module.exports = gte
 
 
 /***/ }),

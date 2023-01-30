@@ -1,7 +1,9 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
-import gte from 'semver/functions/lt'
+import gte from 'semver/functions/gte'
 import {getDownloadUrl} from './utils'
+
+export const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
 
 async function run(): Promise<void> {
   try {
@@ -20,7 +22,7 @@ async function run(): Promise<void> {
 
     // Use GHCR mirror by default
     if (version.toLowerCase() === 'latest' || gte(version, '1.28.0')) {
-      core.exportVariable('SUPABASE_INTERNAL_IMAGE_REGISTRY', 'ghcr.io')
+      core.exportVariable(CLI_CONFIG_REGISTRY, 'ghcr.io')
     }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
