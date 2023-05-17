@@ -120,7 +120,8 @@ Then run [ncc](https://github.com/zeit/ncc) and push the results:
 $ npm run all
 $ git add dist
 $ git commit -a -m "Update dependencies"
-$ git push origin releases/v1
+$ git tag -f v1
+$ git push -f --tags
 ```
 
 Note: We recommend using the `--license` option for ncc, which will create a license file for all of the production node modules used in your project.
