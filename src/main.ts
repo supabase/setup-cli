@@ -1,7 +1,7 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
 import gte from 'semver/functions/gte'
-import {getDownloadUrl} from './utils'
+import {getDownloadUrl, determineInstalledVersion} from './utils'
 
 export const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
 
@@ -19,6 +19,10 @@ async function run(): Promise<void> {
 
     // Expose the tool by adding it to the PATH
     core.addPath(pathToCLI)
+
+    // Expose installed tool version
+    const determinedVersion = await determineInstalledVersion()
+    core.setOutput('version', determinedVersion)
 
     // Use GHCR mirror by default
     if (version.toLowerCase() === 'latest' || gte(version, '1.28.0')) {

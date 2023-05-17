@@ -6,6 +6,9 @@ inputs:
     description: Version of Supabase CLI to install
     required: false
     default: 1.28.3
+outputs:
+  version:
+    description: Version of installed Supabase CLI
 runs:
   using: node16
   main: dist/index.js
