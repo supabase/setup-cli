@@ -60,6 +60,9 @@ function run() {
             const pathToCLI = yield tc.extractTar(pathToTarball);
             // Expose the tool by adding it to the PATH
             core.addPath(pathToCLI);
+            // Expose installed tool version
+            const determinedVersion = yield (0, utils_1.determineInstalledVersion)();
+            core.setOutput('version', determinedVersion);
             // Use GHCR mirror by default
             if (version.toLowerCase() === 'latest' || (0, gte_1.default)(version, '1.28.0')) {
                 core.exportVariable(exports.CLI_CONFIG_REGISTRY, 'ghcr.io');
@@ -94,9 +97,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getDownloadUrl = void 0;
+exports.determineInstalledVersion = exports.getDownloadUrl = void 0;
+const child_process_1 = __nccwpck_require__(2081);
 const os_1 = __importDefault(__nccwpck_require__(2037));
 const lt_1 = __importDefault(__nccwpck_require__(194));
+const util_1 = __nccwpck_require__(3837);
+const doExec = (0, util_1.promisify)(child_process_1.exec);
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
 const mapArch = (arch) => {
@@ -126,6 +132,15 @@ const getDownloadUrl = (version) => __awaiter(void 0, void 0, void 0, function* 
     return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`;
 });
 exports.getDownloadUrl = getDownloadUrl;
+const determineInstalledVersion = () => __awaiter(void 0, void 0, void 0, function* () {
+    const { stdout } = yield doExec('supabase --version');
+    const version = stdout.trim();
+    if (!version) {
+        throw new Error('Could not determine installed Supabase CLI version');
+    }
+    return version;
+});
+exports.determineInstalledVersion = determineInstalledVersion;
 
 
 /***/ }),

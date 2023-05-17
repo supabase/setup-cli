@@ -117,7 +117,7 @@ Actions are run from GitHub repos so we will checkin the packed dist folder.
 Then run [ncc](https://github.com/zeit/ncc) and push the results:
 
 ```bash
-$ npm run package
+$ npm run all
 $ git add dist
 $ git commit -a -m "Update dependencies"
 $ git push origin releases/v1
