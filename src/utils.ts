@@ -1,5 +1,9 @@
+import {exec} from 'child_process'
 import os from 'os'
 import lt from 'semver/functions/lt'
+import {promisify} from 'util'
+
+const doExec = promisify(exec)
 
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
@@ -30,4 +34,15 @@ export const getDownloadUrl = async (version: string): Promise<string> => {
     return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`
   }
   return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`
+}
+
+export const determineInstalledVersion = async (): Promise<string> => {
+  const {stdout} = await doExec('supabase --version')
+
+  const version = stdout.trim()
+  if (!version) {
+    throw new Error('Could not determine installed Supabase CLI version')
+  }
+
+  return version
 }
