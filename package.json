@@ -33,7 +33,7 @@
     "@types/js-yaml": "^4.0.5",
     "@types/node": "^16.11.47",
     "@types/semver": "^7.5.0",
-    "@typescript-eslint/parser": "^5.59.6",
+    "@typescript-eslint/parser": "^5.59.7",
     "@vercel/ncc": "^0.36.1",
     "eslint": "^8.41.0",
     "eslint-plugin-github": "^4.7.0",
