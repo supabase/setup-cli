@@ -2,7 +2,6 @@
 
 Migrations are programmatic changes to your database. They are usually checked into Git.
 
-
 ## Testing your migrations
 
 Inside your repository, create a new file inside the `.github/workflows` folder called `test-migrations.yml`.
@@ -24,4 +23,3 @@ jobs:
         - run: supabase init
         - run: supabase db start
 ```
-
