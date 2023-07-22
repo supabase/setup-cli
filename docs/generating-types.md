@@ -2,6 +2,15 @@
 
 You can use the Supabase CLI to automatically generate Typescript definitions from your Postgres database. You can then pass these definitions to your `supabase-js` client and get end-to-end type safety across client, server, and database.
 
+<div className="video-container">
+  <iframe
+    src="https://www.youtube-nocookie.com/embed/VSNgAIObBdw"
+    frameBorder="1"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+    allowFullScreen
+  ></iframe>
+</div>
+
 ## Testing your migrations
 
 Inside your repository, create a new file inside the `.github/workflows` folder called `generate-types.yml`.
