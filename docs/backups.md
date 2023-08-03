@@ -28,7 +28,7 @@ jobs:
 ```
 ## Periodic Backups Workflow
 
-This section describes a workflow that creates periodic backups of your Supabase database. The workflow is triggered by `push` and `pull_request` events on the `main` branch, manually via `workflow_dispatch`, and automatically at midnight every day due to the `schedule` event with a `cron` expression.
+You can use the GitHub Action to run periodic backups of your database. In this example, the Action workflow is triggered by `push` and `pull_request` events on the `main` branch, manually via `workflow_dispatch`, and automatically at midnight every day due to the `schedule` event with a `cron` expression.
 The workflow runs on the latest Ubuntu runner and requires write permissions to the repository's contents. It uses the Supabase CLI to dump the roles, schema, and data from your Supabase database, utilizing the `SUPABASE_DB_URL` environment variable that is securely stored in the GitHub secrets.
 After the backup is complete, it auto-commits the changes to the repository using the `git-auto-commit-action`. This ensures that the latest backup is always available in your repository. The commit message for these automated commits is "Supabase backup".
 This workflow provides an automated solution for maintaining regular backups of your Supabase database. It helps keep your data safe and enables easy restoration in case of any accidental data loss or corruption.
