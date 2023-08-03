@@ -1,6 +1,6 @@
 # Supabase Backup Database
 
-This guide will show you how to use the Supabase CLI to backup your Postgres database. The steps will involve running a series of commands to dump roles, schema, and data separately.
+You can use the Supabase CLI to backup your Postgres database. The steps involve running a series of commands to dump roles, schema, and data separately.
 Inside your repository, create a new file inside the `.github/workflows` folder called `backup.yml`. Copy the following snippet inside the file, and the action will run whenever a new PR is created:
 
 ## Backup action
