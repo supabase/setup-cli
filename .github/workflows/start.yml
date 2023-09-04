@@ -22,7 +22,7 @@ jobs:
           - 1.0.0
           - latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         with:
           version: ${{ matrix.version }}
