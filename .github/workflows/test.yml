@@ -13,7 +13,7 @@ jobs:
   build: # make sure build/ci work properly
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: npm install
       - run: npm run all
   test: # make sure the action works on a clean machine without building
@@ -23,7 +23,7 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
         version: [1.0.0, latest]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         with:
           version: ${{ matrix.version }}
