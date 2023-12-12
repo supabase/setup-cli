@@ -20,12 +20,16 @@ jobs:
     strategy:
       matrix:
         version:
-          - 1.0.0
+          - 1.28.3
           - latest
+        pg_major:
+          - 14
+          - 15
     steps:
       - uses: actions/checkout@v4
       - uses: ./
         with:
           version: ${{ matrix.version }}
       - run: supabase init
+      - run: sed -i -E "s|^(major_version) .*|\1 = ${{ matrix.pg_major }}|" supabase/config.toml
       - run: supabase start
