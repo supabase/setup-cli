@@ -1,7 +1,7 @@
-# Adapted from https://blog.somewhatabstract.com/2021/10/11/setting-up-dependabot-with-github-actions-to-approve-and-merge/
+# Adapted from https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions#enable-auto-merge-on-a-pull-request
 name: Dependabot auto-merge
 
-on: pull_request_target
+on: pull_request
 
 permissions:
   pull-requests: write
