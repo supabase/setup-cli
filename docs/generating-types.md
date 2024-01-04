@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
         - uses: supabase/setup-cli@v1
-            with:
+          with:
             version: latest
         - run: supabase init
         - run: supabase db start
