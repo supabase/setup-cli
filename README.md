@@ -5,7 +5,7 @@
 
 ## About
 
-This action sets up the Supabase CLI, [`supabase`](https://github.com/supabase/cli), on GitHub's hosted Actions runners.
+This action sets up the Supabase CLI, [`supabase`](https://github.com/supabase/cli), on GitHub's hosted Actions runners. Other CI runners like [BitBucket](https://bitbucket.org/supabase-cli/setup-cli/src/master/bitbucket-pipelines.yml) and [GitLab](https://gitlab.com/sweatybridge/setup-cli/-/blob/main/.gitlab-ci.yml) are supported via their respective pipelines.
 
 This action can be run on `ubuntu-latest`, `windows-latest`, and `macos-latest` GitHub Actions runners, and will install and expose a specified version of the `supabase` CLI on the runner environment.
 
