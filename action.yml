@@ -1,14 +1,12 @@
-name: Supabase CLI Action
-description: Setup Supabase CLI, supabase, on GitHub Actions runners
-author: Supabase
-inputs:
-  version:
-    description: Version of Supabase CLI to install
-    required: false
-    default: 1.136.3
-outputs:
-  version:
-    description: Version of installed Supabase CLI
-runs:
-  using: node20
-  main: dist/index.js
+name: My Workflow
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1.3.0
+        with:
+          version: 1.136.3
+      - name: Run Supabase CLI command
+        run: supabase db migrate
