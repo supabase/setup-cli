@@ -32,7 +32,7 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^16.11.47",
-    "@types/semver": "^7.5.7",
+    "@types/semver": "^7.5.8",
     "@typescript-eslint/parser": "^5.62.0",
     "@vercel/ncc": "^0.38.1",
     "eslint": "^8.57.0",
