@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: supabase/setup-cli@v1
         with:
-          version: 1.11.4
+          version: latest
       - run: supabase db start
       - run: supabase test db
 
@@ -44,9 +44,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: supabase/setup-cli@v1
         with:
-          version: 1.11.4
+          version: latest
       - run: supabase start
-      - run: supabase functions serve
       - run: deno test --allow-all deno-test.ts --env-file .env.local
 
 ```
