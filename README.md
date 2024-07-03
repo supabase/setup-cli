@@ -46,7 +46,7 @@ The actions supports the following inputs:
 
 | Name      | Type   | Description                        | Default   | Required |
 | --------- | ------ | ---------------------------------- | --------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | `1.176.10` | false    |
+| `version` | String | Supabase CLI version (or `latest`) | `1.178.2` | false    |
 
 ## Advanced Usage
 
