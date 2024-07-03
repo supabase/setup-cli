@@ -24,7 +24,7 @@ A specific version of the `supabase` CLI can be installed:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 1.176.10
+      version: 1.178.2
 ```
 
 Run `supabase db start` to execute all migrations on a fresh database:
