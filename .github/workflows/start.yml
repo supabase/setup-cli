@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         version:
-          - 1.136.3
+          - 1.178.2
           - latest
         pg_major:
           - 14
