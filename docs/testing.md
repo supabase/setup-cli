@@ -45,6 +45,9 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: latest
       - run: supabase start
       - run: deno test --allow-all deno-test.ts --env-file .env.local
 
