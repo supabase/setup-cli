@@ -21,6 +21,7 @@ jobs:
       matrix:
         version:
           - 1.178.2
+          - 2.20.3
           - latest
         pg_major:
           - 14

@@ -24,7 +24,7 @@ A specific version of the `supabase` CLI can be installed:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 1.178.2
+      version: 2.20.3
 ```
 
 Run `supabase db start` to execute all migrations on a fresh database:
@@ -44,9 +44,9 @@ Since Supabase CLI relies on Docker Engine API, additional setup may be required
 
 The actions supports the following inputs:
 
-| Name      | Type   | Description                        | Default   | Required |
-| --------- | ------ | ---------------------------------- | --------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | `1.178.2` | false    |
+| Name      | Type   | Description                        | Default  | Required |
+| --------- | ------ | ---------------------------------- | -------- | -------- |
+| `version` | String | Supabase CLI version (or `latest`) | `2.20.3` | false    |
 
 ## Advanced Usage
 
