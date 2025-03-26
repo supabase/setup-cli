@@ -9,6 +9,11 @@ Inside your repository, create a new file inside the `.github/workflows` folder 
 
 ## Backup action
 
+!!! note
+
+    You should put the session mode (pooler) or url in a [secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) for the Repo. [Not in environment variables](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables).
+
+
 ```yaml
 name: 'backup-database'
 on:
