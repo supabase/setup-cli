@@ -17,9 +17,9 @@ jobs:
   build: 
     runs-on: ubuntu-latest
     env:
-      supabase_db_url: ${{ secrets.SUPABASE_DB_URL }}   # For example: postgresql://postgres:[YOUR-PASSWORD]@db.<ref>.supabase.co:5432/postgres
+      supabase_db_url: ${{ secrets.SUPABASE_DB_URL }}   # For example: postgresql://postgres.supa-nacho:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -57,10 +57,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      supabase_db_url: ${{ secrets.SUPABASE_DB_URL }}   # For example: postgresql://postgres:[YOUR-PASSWORD]@db.<ref>.supabase.co:5432/postgres
+    env: # For example: postgresql://postgres.supa-nacho:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
+            supabase_db_url: ${{ secrets.SUPABASE_DB_URL }}   
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
       - uses: supabase/setup-cli@v1
