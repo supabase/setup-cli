@@ -24,11 +24,12 @@ jobs:
       matrix:
         version:
           - 1.178.2
-          - 2.20.3
+          - 2.33.0
           - latest
         pg_major:
           - 14
           - 15
+          - 17
     steps:
       - uses: actions/checkout@v4
       - uses: ./
