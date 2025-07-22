@@ -24,7 +24,7 @@ A specific version of the `supabase` CLI can be installed:
 steps:
   - uses: supabase/setup-cli@v1
     with:
-      version: 2.20.3
+      version: 2.33.0
 ```
 
 Run `supabase db start` to execute all migrations on a fresh database:
@@ -34,7 +34,6 @@ steps:
   - uses: supabase/setup-cli@v1
     with:
       version: latest
-  - run: supabase init
   - run: supabase db start
 ```
 
@@ -46,7 +45,7 @@ The actions supports the following inputs:
 
 | Name      | Type   | Description                        | Default  | Required |
 | --------- | ------ | ---------------------------------- | -------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | `2.20.3` | false    |
+| `version` | String | Supabase CLI version (or `latest`) | `2.33.0` | false    |
 
 ## Advanced Usage
 
@@ -55,11 +54,10 @@ Check generated TypeScript types are up-to-date with Postgres schema:
 ```yaml
 steps:
   - uses: supabase/setup-cli@v1
-  - run: supabase init
   - run: supabase db start
   - name: Verify generated types match Postgres schema
     run: |
-      supabase gen types typescript --local > schema.gen.ts
+      supabase gen types --local > schema.gen.ts
       if ! git diff --ignore-space-at-eol --exit-code --quiet schema.gen.ts; then
         echo "Detected uncommitted changes after build. See status below:"
         git diff
@@ -72,6 +70,7 @@ Release job to push schema changes to a Supabase project:
 ```yaml
 env:
   SUPABASE_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+  # Optionally set the postgres password for linking project database
   SUPABASE_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
   # Retrieve <project-id> from dashboard url: https://app.supabase.com/project/<project-id>
   PROJECT_ID: <project-id>
@@ -84,12 +83,12 @@ env:
 
 ## Develop
 
-> Requires `node >= 16`
+> Requires `node >= 20`
 
 Install the dependencies
 
 ```bash
-$ npm install
+$ npm ci
 ```
 
 Build the typescript and package it for distribution
