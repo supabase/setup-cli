@@ -14,6 +14,9 @@ defaults:
   run:
     shell: bash
 
+permissions:
+  contents: read
+
 jobs:
   e2e: # make sure the action works on a clean machine without building
     runs-on: ubuntu-latest
