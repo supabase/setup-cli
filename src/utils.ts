@@ -1,7 +1,7 @@
-import {exec} from 'child_process'
+import { exec } from 'child_process'
 import os from 'os'
-import lt from 'semver/functions/lt'
-import {promisify} from 'util'
+import { lt } from 'semver'
+import { promisify } from 'util'
 
 const doExec = promisify(exec)
 
@@ -37,7 +37,7 @@ export const getDownloadUrl = async (version: string): Promise<string> => {
 }
 
 export const determineInstalledVersion = async (): Promise<string> => {
-  const {stdout} = await doExec('supabase --version')
+  const { stdout } = await doExec('supabase --version')
 
   const version = stdout.trim()
   if (!version) {

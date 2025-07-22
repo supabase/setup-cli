@@ -1,12 +1,13 @@
-import {getDownloadUrl} from '../src/utils'
-import {CLI_CONFIG_REGISTRY} from '../src/main'
+import { getDownloadUrl } from '../src/utils'
+import { CLI_CONFIG_REGISTRY } from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
 import * as cp from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as yaml from 'js-yaml'
-import {expect, test} from '@jest/globals'
+import * as url from 'url'
+import { expect, test } from '@jest/globals'
 
 test('gets download url to binary', async () => {
   const url = await getDownloadUrl('1.28.0')
@@ -37,18 +38,23 @@ test('gets download url to latest version', async () => {
 })
 
 // shows how the runner will run a javascript action with env / stdout protocol
-test('test runs', () => {
-  process.env['RUNNER_TEMP'] = os.tmpdir()
-  const config = path.join(__dirname, '..', 'action.yml')
-  const action: any = yaml.load(fs.readFileSync(config, 'utf8'))
-  process.env['INPUT_VERSION'] = action.inputs.version.default
-  const np = process.execPath
-  const ip = path.join(__dirname, '..', 'lib', 'main.js')
-  const options: cp.ExecFileSyncOptions = {
-    env: process.env
+test('runs main action', () => {
+  const { env, execPath } = process
+  const repo = path.dirname(path.dirname(url.fileURLToPath(import.meta.url)))
+  const config = path.join(repo, 'action.yml')
+  const action = yaml.load(fs.readFileSync(config, 'utf8')) as {
+    inputs: { version: { default: string } }
   }
-  const stdout = cp.execFileSync(np, [ip], options).toString()
-  console.log(stdout)
+  const ip = path.join(repo, 'dist', 'index.js')
+  const stdout = cp
+    .execFileSync(execPath, [ip], {
+      env: {
+        ...env,
+        RUNNER_TEMP: os.tmpdir(),
+        INPUT_VERSION: action.inputs.version.default
+      }
+    })
+    .toString()
   expect
     .stringContaining(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
     .asymmetricMatch(stdout)

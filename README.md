@@ -5,9 +5,17 @@
 
 ## About
 
-This action sets up the Supabase CLI, [`supabase`](https://github.com/supabase/cli), on GitHub's hosted Actions runners. Other CI runners like [BitBucket](https://bitbucket.org/supabase-cli/setup-cli/src/master/bitbucket-pipelines.yml) and [GitLab](https://gitlab.com/sweatybridge/setup-cli/-/blob/main/.gitlab-ci.yml) are supported via their respective pipelines.
+This action sets up the Supabase CLI,
+[`supabase`](https://github.com/supabase/cli), on GitHub's hosted Actions
+runners. Other CI runners like
+[BitBucket](https://bitbucket.org/supabase-cli/setup-cli/src/master/bitbucket-pipelines.yml)
+and
+[GitLab](https://gitlab.com/sweatybridge/setup-cli/-/blob/main/.gitlab-ci.yml)
+are supported via their respective pipelines.
 
-This action can be run on `ubuntu-latest`, `windows-latest`, and `macos-latest` GitHub Actions runners, and will install and expose a specified version of the `supabase` CLI on the runner environment.
+This action can be run on `ubuntu-latest`, `windows-latest`, and `macos-latest`
+GitHub Actions runners, and will install and expose a specified version of the
+`supabase` CLI on the runner environment.
 
 ## Usage
 
@@ -38,7 +46,8 @@ steps:
   - run: supabase db start
 ```
 
-Since Supabase CLI relies on Docker Engine API, additional setup may be required on Windows and macOS runners.
+Since Supabase CLI relies on Docker Engine API, additional setup may be required
+on Windows and macOS runners.
 
 ## Inputs
 
@@ -119,11 +128,13 @@ Actions are run from GitHub repos so we will checkin the packed dist folder.
 
 Your action is now published! :rocket:
 
-See the [versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
+See the
+[versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
 
 ## Validate
 
-You can now validate the action by referencing `./` in a workflow in your repo (see [test.yml](.github/workflows/test.yml))
+You can now validate the action by referencing `./` in a workflow in your repo
+(see [test.yml](.github/workflows/test.yml))
 
 ```yaml
 uses: ./
@@ -131,4 +142,5 @@ with:
   version: latest
 ```
 
-See the [actions tab](https://github.com/actions/typescript-action/actions) for runs of this action! :rocket:
+See the [actions tab](https://github.com/actions/typescript-action/actions) for
+runs of this action! :rocket:

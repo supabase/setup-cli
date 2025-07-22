@@ -1,28 +1,36 @@
 {
   "name": "setup-cli",
-  "version": "0.0.1",
-  "private": true,
   "description": "Supabase CLI GitHub Action",
-  "main": "lib/main.js",
-  "scripts": {
-    "build": "tsc",
-    "format": "prettier --write '**/*.ts'",
-    "format-check": "prettier --check '**/*.ts'",
-    "lint": "eslint",
-    "package": "ncc build --source-map --license licenses.txt",
-    "test": "jest",
-    "all": "npm run build && npm run format && npm run lint && npm run package && npm test"
-  },
+  "version": "0.0.1",
+  "author": "",
+  "type": "module",
+  "private": true,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/supabase/setup-cli.git"
   },
   "keywords": [
-    "actions",
-    "node",
-    "setup"
+    "actions"
   ],
-  "author": "",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "bundle": "npm run format:write && npm run package",
+    "ci-test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest",
+    "coverage": "npx make-coverage-badge --output-path ./badges/coverage.svg",
+    "format:write": "npx prettier --write .",
+    "format:check": "npx prettier --check .",
+    "lint": "npx eslint .",
+    "local-action": "npx @github/local-action . src/main.ts .env",
+    "package": "npx rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
+    "package:watch": "npm run package -- --watch",
+    "test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest",
+    "all": "npm run format:write && npm run lint && npm run package && npm run test && npm run coverage"
+  },
   "license": "MIT",
   "dependencies": {
     "@actions/core": "^1.11.1",
@@ -30,20 +38,35 @@
     "semver": "^7.7.2"
   },
   "devDependencies": {
-    "@stylistic/eslint-plugin": "^5.2.2",
+    "@eslint/compat": "^1.3.1",
+    "@github/local-action": "^5.1.0",
+    "@jest/globals": "^30.0.5",
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20.19.9",
+    "@types/node": "^24.1.0",
     "@types/semver": "^7.7.0",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0",
-    "@vercel/ncc": "^0.38.3",
+    "@typescript-eslint/parser": "^8.32.1",
     "eslint": "^9.31.0",
-    "eslint-plugin-github": "^6.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jest": "^29.0.1",
-    "jest": "^29.7.0",
+    "eslint-plugin-prettier": "^5.5.3",
+    "jest": "^30.0.5",
     "js-yaml": "^4.1.0",
-    "prettier": "3.6.2",
+    "make-coverage-badge": "^1.2.0",
+    "prettier": "^3.6.2",
+    "prettier-eslint": "^16.4.2",
+    "rollup": "^4.45.1",
     "ts-jest": "^29.4.0",
+    "ts-jest-resolver": "^2.0.1",
     "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "*"
   }
 }

@@ -1,33 +1,34 @@
 site_name: supabase-github-action
 site_url: https://supabase.github.io/supabase-github-action
-site_description: A GitHub action for interacting with your Supabase projects using the CLI. 
+site_description:
+  A GitHub action for interacting with your Supabase projects using the CLI.
 
 repo_name: supabase/supabase-github-action
 repo_url: https://github.com/supabase/supabase-github-action
 
 nav:
-    - Welcome: 'index.md'
+  - Welcome: 'index.md'
 
 theme:
-    name: 'material'
-    features:
-      - navigation.expand
-    favicon: 'assets/favicon.ico'
-    logo: 'assets/favicon.ico'
-    homepage: https://supabase.github.io/supabase-github-action
-    palette:
-        primary: black
-        accent: light green
+  name: 'material'
+  features:
+    - navigation.expand
+  favicon: 'assets/favicon.ico'
+  logo: 'assets/favicon.ico'
+  homepage: https://supabase.github.io/supabase-github-action
+  palette:
+    primary: black
+    accent: light green
 
 markdown_extensions:
-    - pymdownx.highlight:
-        linenums: true
-        guess_lang: false
-        use_pygments: true
-        pygments_style: default
-    - pymdownx.superfences
-    - pymdownx.tabbed:
-        alternate_style: true
-    - pymdownx.snippets
-    - pymdownx.tasklist
-    - admonition
+  - pymdownx.highlight:
+      linenums: true
+      guess_lang: false
+      use_pygments: true
+      pygments_style: default
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - pymdownx.tasklist
+  - admonition
