@@ -30,6 +30,9 @@ jobs:
           - 14
           - 15
           - 17
+        exclude:
+          - version: 1.178.2
+            pg_major: 17
     steps:
       - uses: actions/checkout@v4
       - uses: ./
