@@ -3,16 +3,28 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+    groups:
+      actions-minor:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: daily
+    groups:
+      npm-development:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      npm-production:
+        dependency-type: production
+        update-types:
+          - patch
     ignore:
       - dependency-name: '@types/node'
-        update-types:
-          - version-update:semver-major
-      - dependency-name: 'jest'
         update-types:
           - version-update:semver-major
