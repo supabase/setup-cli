@@ -1,14 +1,16 @@
 # :gear: Supabase CLI Action
 
-![](https://github.com/supabase/setup-cli/workflows/build-test/badge.svg)
-![](https://github.com/supabase/setup-cli/workflows/CodeQL/badge.svg)
+[![CI](https://github.com/supabase/setup-cli/actions/workflows/start.yml/badge.svg)](https://github.com/supabase/setup-cli/actions/workflows/start.yml)
+[![Linter](https://github.com/supabase/setup-cli/actions/workflows/linter.yml/badge.svg)](https://github.com/supabase/setup-cli/actions/workflows/linter.yml)
+[![CodeQL](https://github.com/supabase/setup-cli/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/supabase/setup-cli/actions/workflows/codeql-analysis.yml)
+[![Coverage](./badges/coverage.svg)](https://github.com/supabase/setup-cli/actions/workflows/test.yml)
 
 ## About
 
 This action sets up the Supabase CLI,
 [`supabase`](https://github.com/supabase/cli), on GitHub's hosted Actions
 runners. Other CI runners like
-[BitBucket](https://bitbucket.org/supabase-cli/setup-cli/src/master/bitbucket-pipelines.yml)
+[Bitbucket](https://bitbucket.org/supabase-cli/setup-cli/src/master/bitbucket-pipelines.yml)
 and
 [GitLab](https://gitlab.com/sweatybridge/setup-cli/-/blob/main/.gitlab-ci.yml)
 are supported via their respective pipelines.
@@ -93,35 +95,48 @@ env:
 
 ## Develop
 
-> Requires `node >= 16`
+After you've cloned the repository to your local machine or codespace, you'll
+need to perform some initial setup steps before you can develop your action.
 
-Install the dependencies
+> [!NOTE]
+>
+> You'll need to have a reasonably modern version of
+> [Node.js](https://nodejs.org) handy (20.x or later should work!). If you are
+> using a version manager like [`nodenv`](https://github.com/nodenv/nodenv) or
+> [`fnm`](https://github.com/Schniz/fnm), this template has a `.node-version`
+> file at the root of the repository that can be used to automatically switch to
+> the correct version when you `cd` into the repository. Additionally, this
+> `.node-version` file is used by GitHub Actions in any `actions/setup-node`
+> actions.
 
-```bash
-$ npm install
-```
+1. :hammer_and_wrench: Install the dependencies
 
-Build the typescript and package it for distribution
+   ```bash
+   npm ci
+   ```
 
-```bash
-$ npm run build && npm run package
-```
+1. :building_construction: Package the TypeScript for distribution
 
-Run the tests :heavy_check_mark:
+   ```bash
+   npm run bundle
+   ```
 
-```bash
-$ npm test
+1. :white_check_mark: Run the tests
 
- PASS  __tests__/main.test.ts
-  ✓ gets download url to binary (3 ms)
-  ✓ test runs (891 ms)
+   ```bash
+   $ npm test
 
-...
-```
+   PASS  ./index.test.js
+     ✓ gets download url to binary (3 ms)
+     ✓ runs main action (891 ms)
+
+   ...
+   ```
 
 ## Publish to a distribution branch
 
-Actions are run from GitHub repos so we will checkin the packed dist folder.
+Actions are run from this GitHub repository so we will checkin the packed `dist`
+folder.
 
 1. Create a new GitHub release
 2. Rebase `v1` branch on `main`
@@ -133,8 +148,8 @@ See the
 
 ## Validate
 
-You can now validate the action by referencing `./` in a workflow in your repo
-(see [test.yml](.github/workflows/test.yml))
+You can now validate the action by referencing `./` in a workflow in your
+repository (see [test.yml](.github/workflows/test.yml))
 
 ```yaml
 uses: ./
@@ -142,5 +157,5 @@ with:
   version: latest
 ```
 
-See the [actions tab](https://github.com/actions/typescript-action/actions) for
-runs of this action! :rocket:
+See the [actions tab](https://github.com/supabase/setup-cli/actions) for runs of
+this action! :rocket:
