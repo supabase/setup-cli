@@ -45,6 +45,8 @@ steps:
     with:
       version: latest
   - run: supabase db start
+  # Optionally connect to the database using psql
+  - run: psql 'postgres://postgres:postgres@localhost:54322/postgres' -c ''
 ```
 
 Since Supabase CLI relies on Docker Engine API, additional setup may be required
