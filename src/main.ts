@@ -1,11 +1,16 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
-import gte from 'semver/functions/gte'
-import {getDownloadUrl, determineInstalledVersion} from './utils'
+import { gte } from 'semver'
+import { getDownloadUrl, determineInstalledVersion } from './utils.js'
 
 export const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
 
-async function run(): Promise<void> {
+/**
+ * The main function for the action.
+ *
+ * @returns Resolves when the action is complete.
+ */
+export async function run(): Promise<void> {
   try {
     // Get version of tool to be installed
     const version = core.getInput('version')
@@ -32,5 +37,3 @@ async function run(): Promise<void> {
     if (error instanceof Error) core.setFailed(error.message)
   }
 }
-
-run()
