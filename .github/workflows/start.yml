@@ -30,11 +30,16 @@ jobs:
           - 14
           - 15
           - 17
+        exclude:
+          - version: 1.178.2
+            pg_major: 17
     steps:
       - uses: actions/checkout@v4
       - uses: ./
         with:
           version: ${{ matrix.version }}
       - run: supabase init
-      - run: sed -i -E "s|^(major_version) .*|\1 = ${{ matrix.pg_major }}|" supabase/config.toml
+      - run:
+          sed -i -E "s|^(major_version) .*|\1 = ${{ matrix.pg_major }}|"
+          supabase/config.toml
       - run: supabase start
