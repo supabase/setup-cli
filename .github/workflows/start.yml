@@ -39,7 +39,5 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - run: supabase init
-      - run:
-          sed -i -E "s|^(major_version) .*|\1 = ${{ matrix.pg_major }}|"
-          supabase/config.toml
+      - run: sed -i -E "s|^(major_version) .*|\1 = ${{ matrix.pg_major }}|" supabase/config.toml
       - run: supabase start

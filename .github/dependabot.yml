@@ -25,6 +25,7 @@ updates:
         update-types:
           - patch
     ignore:
+      # nodejs types is pinned to runtime version
       - dependency-name: '@types/node'
         update-types:
           - version-update:semver-major
