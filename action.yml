@@ -5,7 +5,7 @@ inputs:
   version:
     description: Version of Supabase CLI to install
     required: false
-    default: 2.20.3
+    default: 2.33.0
 outputs:
   version:
     description: Version of installed Supabase CLI
