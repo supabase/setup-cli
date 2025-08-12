@@ -17,7 +17,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -52,7 +52,7 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
         version: [1.0.0, latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./
         with:
           version: ${{ matrix.version }}
