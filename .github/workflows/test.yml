@@ -40,7 +40,7 @@ jobs:
 
       # Upload the mismatched version as a workflow artifact.
       - if: ${{ failure() && steps.diff.outcome == 'failure' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/
