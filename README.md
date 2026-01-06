@@ -93,6 +93,17 @@ env:
    - run: supabase db push
 ```
 
+Use Supabase env vars to run your application:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v1
+  - run: supabase start
+  - name: Export env vars
+    # Customize the variable names if necessary for your .env file
+    run: supabase status -o env --override-name api.url=SUPABASE_URL --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY >> .env
+```
+
 ## Develop
 
 After you've cloned the repository to your local machine or codespace, you'll
