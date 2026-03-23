@@ -1,7 +1,7 @@
 {
   "name": "setup-cli",
   "description": "Supabase CLI GitHub Action",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "author": "",
   "type": "module",
   "private": true,
