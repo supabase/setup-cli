@@ -104,6 +104,10 @@ jobs:
         id: update-licenses
         run: licensed cache
 
+      - name: Format License Files
+        id: format-licenses
+        run: bun x oxfmt --write .licensed.yml .licenses
+
       - name: Commit Licenses
         id: commit-licenses
         run: |
