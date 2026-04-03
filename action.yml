@@ -3,9 +3,8 @@ description: Setup Supabase CLI, supabase, on GitHub Actions runners
 author: Supabase
 inputs:
   version:
-    description: Version of Supabase CLI to install
+    description: Version of Supabase CLI to install. If omitted, detect from the root lockfile and otherwise use latest.
     required: false
-    default: 2.84.2
 outputs:
   version:
     description: Version of installed Supabase CLI

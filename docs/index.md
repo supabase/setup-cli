@@ -6,6 +6,9 @@ The Supabase CLI Action provides an easy way to install the
 The action supports `ubuntu-latest`, `windows-latest`, and `macos-latest`, and
 adds the requested `supabase` version to `PATH` for the rest of the job.
 
+If `version` is omitted, the action checks the repository root for `bun.lock`,
+`pnpm-lock.yaml`, or `package-lock.json` and otherwise falls back to `latest`.
+
 ## Quick Start
 
 This example runs Supabase migrations on every pull request:
@@ -29,7 +32,7 @@ jobs:
 To pin a specific CLI version:
 
 ```yaml
- - uses: supabase/setup-cli@v2
+- uses: supabase/setup-cli@v2
   with:
     version: 2.84.2
 ```

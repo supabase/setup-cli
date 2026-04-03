@@ -27,6 +27,10 @@ steps:
   - uses: supabase/setup-cli@v2
 ```
 
+If `version` is omitted, the action checks the repository root for `bun.lock`,
+`pnpm-lock.yaml`, or `package-lock.json` and uses the declared `supabase`
+version. If no supported lockfile is present, it falls back to `latest`.
+
 A specific version of the `supabase` CLI can be installed:
 
 ```yaml
@@ -54,9 +58,9 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                        | Default  | Required |
-| --------- | ------ | ---------------------------------- | -------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | `2.84.2` | false    |
+| Name      | Type   | Description                        | Default                           | Required |
+| --------- | ------ | ---------------------------------- | --------------------------------- | -------- |
+| `version` | String | Supabase CLI version (or `latest`) | Root lockfile version or `latest` | false    |
 
 ## Advanced Usage
 
