@@ -30,7 +30,7 @@ concurrency:
 jobs:
   check-licenses:
     if: ${{ github.event_name != 'workflow_dispatch' }}
-    name: Check Licenses
+    name: Licensed
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

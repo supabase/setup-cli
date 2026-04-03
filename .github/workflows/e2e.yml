@@ -58,3 +58,14 @@ jobs:
       - run: |
           sed -i -E "s|^(major_version) .*|\\1 = ${{ matrix.pg_major }}|" supabase/config.toml
       - run: supabase start
+
+  e2e-check:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    name: E2E
+    runs-on: ubuntu-latest
+    needs: [e2e]
+    timeout-minutes: 5
+    steps:
+      - run: |
+          e2e_result="${{ needs.e2e.result }}"
+          [[ "$e2e_result" == "success" || "$e2e_result" == "skipped" ]]
