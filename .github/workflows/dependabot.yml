@@ -3,6 +3,10 @@ name: Dependabot auto-merge
 
 on: pull_request
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: write
   contents: write
@@ -10,29 +14,25 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    # Checking the actor will prevent your Action run failing on non-Dependabot
-    # PRs but also ensures that it only does work for Dependabot PRs.
+    timeout-minutes: 10
+    # Only act on PRs opened by Dependabot from branches in this repository.
     if: github.actor == 'dependabot[bot]' && github.repository == github.event.pull_request.head.repo.full_name
     steps:
-      # This first step will fail if there's no metadata and so the approval
-      # will not occur.
+      # Metadata drives the non-major gating used for approval and auto-merge.
       - id: meta
         uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v3.0.0
         with:
-          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      # Here the PR gets approved.
       - name: Approve a PR
-        if: ${{steps.meta.outputs.update-type != 'version-update:semver-major'}}
+        if: ${{ steps.meta.outputs.update-type != 'version-update:semver-major' }}
         run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Finally, this sets the PR to allow auto-merging for patch and minor
-      # updates if all checks pass
       - name: Enable auto-merge for Dependabot PRs
-        if: ${{steps.meta.outputs.update-type != 'version-update:semver-major'}}
+        if: ${{ steps.meta.outputs.update-type != 'version-update:semver-major' }}
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

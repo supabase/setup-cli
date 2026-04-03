@@ -1,42 +1,40 @@
-# `supabase-github-action`
+# `supabase/setup-cli`
 
-The Supabase GitHub Action provides an easy way to use the Supabase CLI on
-GitHub's hosted Actions runners.
+The Supabase CLI Action provides an easy way to install the
+[Supabase CLI](https://github.com/supabase/cli) on GitHub Actions runners.
 
-The action can be run on `ubuntu-latest`, `windows-latest`, and `macos-latest`
-GitHub Actions runners, and will install and expose a specified version of the
-Supabase CLI on the runner environment.
+The action supports `ubuntu-latest`, `windows-latest`, and `macos-latest`, and
+adds the requested `supabase` version to `PATH` for the rest of the job.
 
-## Quick start
+## Quick Start
 
-This example shows how you can use the Supabase GitHub Action to test your
-migrations on every Pull Request.
-
-Inside your repository, create a new file inside the `.github/workflows` folder
-called `test-migrations.yml`.
-
-Copy this snippet inside the file, and the action will run whenever a new PR is
-created:
+This example runs Supabase migrations on every pull request:
 
 ```yaml
-name: 'test-migrations'
+name: test-migrations
+
 on:
   pull_request:
 
 jobs:
-  build:
+  test-migrations:
     runs-on: ubuntu-latest
     steps:
-        - uses: supabase/setup-cli@v1
-            with:
-            version: latest
-        - run: supabase init
-        - run: supabase db start
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v2
+      - run: supabase init
+      - run: supabase db start
+```
+
+To pin a specific CLI version:
+
+```yaml
+ - uses: supabase/setup-cli@v2
+  with:
+    version: 2.84.2
 ```
 
 ## Resources
 
-- **Source Code**:
-  <a href="https://github.com/supabase/supabase-github-action" target="_blank">github.com/supabase/supabase-github-action</a>
-- **CLI Documentation**:
-  <a href="https://supabase.com/docs/guides/cli" target="_blank">supabase.com/docs/guides/cli</a>
+- **Source Code**: <https://github.com/supabase/setup-cli>
+- **CLI Documentation**: <https://supabase.com/docs/guides/cli>

@@ -6,39 +6,54 @@ name: Licensed
 
 on:
   pull_request:
+    paths:
+      - .github/workflows/licensed.yml
+      - .licensed.yml
+      - .licenses/**
+      - bun.lock
+      - package.json
   push:
     branches:
       - main
+    paths:
+      - .github/workflows/licensed.yml
+      - .licensed.yml
+      - .licenses/**
+      - bun.lock
+      - package.json
   workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  licensed:
+  check-licenses:
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     name: Check Licenses
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
         id: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Bun
+        id: setup-bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          persist-credentials: false
-      - name: Setup Node.js
-        id: setup-node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version-file: .node-version
-          cache: npm
+          bun-version-file: .bun-version
 
       - name: Install Dependencies
-        id: npm-ci
-        run: npm ci
+        id: bun-install
+        run: bun install --frozen-lockfile
 
       - name: Setup Ruby
         id: setup-ruby
-        uses: ruby/setup-ruby@4dc28cf14d77b0afa6832d9765ac422dbf0dfedd # v1.298.0
+        uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1.299.0
         with:
           ruby-version: ruby
 
@@ -47,24 +62,57 @@ jobs:
           version: 4.x
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      # If this is a workflow_dispatch event, update the cached licenses.
-      - if: ${{ github.event_name == 'workflow_dispatch' }}
-        name: Update Licenses
+      - name: Check Licenses
+        id: check-licenses
+        run: licensed status
+
+  update-licenses:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    name: Update Licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Bun
+        id: setup-bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install Dependencies
+        id: bun-install
+        run: bun install --frozen-lockfile
+
+      - name: Setup Ruby
+        id: setup-ruby
+        uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1.299.0
+        with:
+          ruby-version: ruby
+
+      - uses: licensee/setup-licensed@0d52e575b3258417672be0dff2f115d7db8771d8 # v1.3.2
+        with:
+          version: 4.x
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update License Cache
         id: update-licenses
         run: licensed cache
 
-      # Then, commit the updated licenses to the repository.
-      - if: ${{ github.event_name == 'workflow_dispatch' }}
-        name: Commit Licenses
+      - name: Commit Licenses
         id: commit-licenses
         run: |
           git config --local user.email "licensed-ci@users.noreply.github.com"
           git config --local user.name "licensed-ci"
-          git add .
+          git add .licenses .licensed.yml
+          if git diff --cached --quiet; then
+            echo "No license cache changes to commit."
+            exit 0
+          fi
           git commit -m "Auto-update license files"
           git push
-
-      # Last, check the status of the cached licenses.
-      - name: Check Licenses
-        id: check-licenses
-        run: licensed status

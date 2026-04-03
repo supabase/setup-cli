@@ -6,7 +6,11 @@ on:
     branches:
       - main
   schedule:
-    - cron: '31 7 * * 3'
+    - cron: "31 7 * * 3"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   actions: read
@@ -18,12 +22,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language:
-          - typescript
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -34,16 +33,11 @@ jobs:
 
       - name: Initialize CodeQL
         id: initialize
-        uses: github/codeql-action/init@ebcb5b36ded6beda4ceefea6a8bc4cc885255bb3 # v3.34.1
+        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
-          config-file: .github/codeql/codeql-config.yml
-          languages: ${{ matrix.language }}
+          languages: javascript-typescript
           source-root: src
-
-      - name: Autobuild
-        id: autobuild
-        uses: github/codeql-action/autobuild@ebcb5b36ded6beda4ceefea6a8bc4cc885255bb3 # v3.34.1
 
       - name: Perform CodeQL Analysis
         id: analyze
-        uses: github/codeql-action/analyze@ebcb5b36ded6beda4ceefea6a8bc4cc885255bb3 # v3.34.1
+        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1

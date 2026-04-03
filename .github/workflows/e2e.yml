@@ -1,14 +1,18 @@
-name: CLI Start
+name: E2E
 on:
   push:
     branches:
       - main
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - "v[0-9]+.[0-9]+.[0-9]+"
   schedule:
     # * is a special character in YAML so you have to quote this string
-    - cron: '30 1,9 * * *'
+    - cron: "30 1,9 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -20,7 +24,9 @@ permissions:
 jobs:
   e2e: # make sure the action works on a clean machine without building
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
         version:
           - 1.178.2
@@ -41,7 +47,7 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - run: supabase init
-      - run:
+      - run: |
           sed -i -E "s|^(major_version) .*|\1 = ${{ matrix.pg_major }}|"
           supabase/config.toml
       - run: supabase start

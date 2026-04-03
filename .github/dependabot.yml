@@ -4,30 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    cooldown:
-      default-days: 7
+    open-pull-requests-limit: 2
     groups:
       actions-minor:
         update-types:
           - minor
           - patch
 
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+    open-pull-requests-limit: 2
     groups:
-      npm-development:
+      bun-development:
         dependency-type: development
         update-types:
           - minor
           - patch
-      npm-production:
+      bun-production:
         dependency-type: production
         update-types:
+          - minor
           - patch
-    ignore:
-      # nodejs types is pinned to runtime version
-      - dependency-name: '@types/node'
-        update-types:
-          - version-update:semver-major
