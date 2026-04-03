@@ -92,6 +92,23 @@ steps:
   - run: supabase db push
 ```
 
+Export local Supabase env vars for app tests:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v2
+  - run: supabase init
+  - run: supabase start
+  - name: Export local Supabase env vars
+    run: |
+      # Customize the variable names as needed for your app.
+      supabase status -o env \
+        --override-name api.url=SUPABASE_URL \
+        --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY \
+        >> .env.test
+  - run: bun test
+```
+
 ## Develop
 
 After you've cloned the repository to your local machine or codespace, you'll
