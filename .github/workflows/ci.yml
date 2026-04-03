@@ -2,6 +2,12 @@ name: CI
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
   push:
     branches:
       - main
@@ -19,6 +25,7 @@ defaults:
 
 jobs:
   validate:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,6 +39,7 @@ jobs:
       - run: bun run ci
 
   test:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -47,7 +55,7 @@ jobs:
       - run: supabase -h
 
   check:
-    if: ${{ always() && github.event.pull_request }}
+    if: ${{ always() && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     needs: [validate, test]
     timeout-minutes: 5
