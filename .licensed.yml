@@ -13,6 +13,4 @@ allowed:
   - other
 
 ignored:
-  npm:
-    # Used by Rollup.js when building in GitHub Actions
-    - '@rollup/rollup-linux-x64-gnu'
+  npm: []
