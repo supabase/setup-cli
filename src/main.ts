@@ -204,5 +204,5 @@ export async function run(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  void run();
+  await run();
 }
