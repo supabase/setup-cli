@@ -40,6 +40,22 @@ steps:
       version: 2.84.2
 ```
 
+Cache Docker images used by `supabase start` across workflow runs:
+
+```yaml
+steps:
+  - uses: actions/checkout@v6
+  - uses: supabase/setup-cli@v2
+    with:
+      version: 2.84.2
+      cache: true
+  - run: supabase start
+```
+
+The first run still pulls images from the registry. Later runs can restore the
+same image set from the GitHub Actions cache before `supabase start` runs, and
+the action saves newly pulled Supabase images at the end of a successful job.
+
 Run `supabase db start` to execute all migrations on a fresh database:
 
 ```yaml
@@ -58,9 +74,18 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                        | Default                           | Required |
-| --------- | ------ | ---------------------------------- | --------------------------------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | Root lockfile version or `latest` | false    |
+| Name        | Type    | Description                                            | Default                           | Required |
+| ----------- | ------- | ------------------------------------------------------ | --------------------------------- | -------- |
+| `version`   | String  | Supabase CLI version (or `latest`)                     | Root lockfile version or `latest` | false    |
+| `cache`     | Boolean | Cache Docker images used by Supabase local development | `false`                           | false    |
+| `cache-key` | String  | Explicit cache key for Supabase Docker images          | Generated from runner and config  | false    |
+
+The action exposes these outputs:
+
+| Name        | Description                                            |
+| ----------- | ------------------------------------------------------ |
+| `version`   | Version of installed Supabase CLI                      |
+| `cache-hit` | Whether an exact Supabase Docker image cache was found |
 
 ## Advanced Usage
 
@@ -101,6 +126,8 @@ Export local Supabase env vars for app tests:
 ```yaml
 steps:
   - uses: supabase/setup-cli@v2
+    with:
+      cache: true
   - run: supabase init
   - run: supabase start
   - name: Export local Supabase env vars
@@ -112,6 +139,22 @@ steps:
         >> .env.test
   - run: bun test
 ```
+
+Customize the Docker image cache key when the image set depends on your workflow
+flags, generated config, or monorepo layout:
+
+```yaml
+steps:
+  - uses: actions/checkout@v6
+  - uses: supabase/setup-cli@v2
+    with:
+      cache: true
+      cache-key: supabase-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('supabase/config.toml') }}-start-all
+  - run: supabase start
+```
+
+Avoid running `docker system prune -a` before the job ends if you want the
+post-action cache save to include images pulled by `supabase start`.
 
 ## Develop
 
@@ -134,6 +177,12 @@ need to perform a few setup steps before you can work on the action.
 
    ```bash
    bun test
+   ```
+
+1. :package: Build the bundled action entrypoints
+
+   ```bash
+   bun run build
    ```
 
 1. :mag: Run the full local CI suite

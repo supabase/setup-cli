@@ -5,27 +5,20 @@ inputs:
   version:
     description: Version of Supabase CLI to install. If omitted, detect from the root lockfile and otherwise use latest.
     required: false
+  cache:
+    description: Cache Docker images used by Supabase local development commands.
+    required: false
+    default: "false"
+  cache-key:
+    description: Optional explicit cache key for Supabase Docker images.
+    required: false
 outputs:
   version:
     description: Version of installed Supabase CLI
-    value: ${{ steps.setup-cli.outputs.version }}
+  cache-hit:
+    description: Whether an exact Supabase Docker image cache was restored.
 runs:
-  using: composite
-  steps:
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      with:
-        bun-version-file: ${{ github.action_path }}/.bun-version
-
-    - name: Install Action Dependencies
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: bun install --frozen-lockfile --production
-
-    - id: setup-cli
-      name: Setup Supabase CLI
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      env:
-        INPUT_VERSION: ${{ inputs.version }}
-      run: bun src/main.ts
+  using: node24
+  main: dist/main.js
+  post: dist/post.js
+  post-if: success()

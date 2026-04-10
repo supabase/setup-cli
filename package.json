@@ -14,22 +14,29 @@
   },
   "type": "module",
   "scripts": {
-    "all": "bun run format && bun run lint && bun run coverage",
-    "ci": "bun run format:check && bun run lint && bun run coverage",
+    "all": "bun run format && bun run lint && bun run coverage && bun run build",
+    "build": "bun build src/main.ts src/post.ts --target=node --format=esm --outdir=dist",
+    "ci": "bun run format:check && bun run lint && bun run coverage && bun run build",
     "coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
-    "format": "bun x oxfmt --write . '!coverage/**'",
-    "format:check": "bun x oxfmt --check . '!coverage/**'",
+    "format": "bun x oxfmt --write . '!coverage/**' '!dist/**'",
+    "format:check": "bun x oxfmt --check . '!coverage/**' '!dist/**'",
     "lint": "bun x oxlint --deny-warnings --type-aware --type-check --tsconfig tsconfig.json src",
     "test": "bun test",
     "typecheck": "bun x tsgo -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@actions/cache": "^6.0.0",
     "@actions/core": "^3.0.0",
-    "@actions/tool-cache": "^4.0.0"
+    "@actions/tool-cache": "^4.0.0",
+    "js-yaml": "^4.1.1",
+    "semver": "^7.7.4"
   },
   "devDependencies": {
     "@tsconfig/bun": "^1.0.10",
     "@types/bun": "^1.3.11",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24",
+    "@types/semver": "^7.7.1",
     "@typescript/native-preview": "^7.0.0-dev.20260409.1",
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0",

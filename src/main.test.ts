@@ -146,10 +146,16 @@ function createPackageLock(version: string): string {
 
 function createActionSpies(inputVersion: string, cliDir: string, expectedUrlFragment: string) {
   return {
-    getInput: spyOn(core, "getInput").mockReturnValue(inputVersion),
+    getInput: spyOn(core, "getInput").mockImplementation((name: string) =>
+      name === "version" ? inputVersion : "",
+    ),
+    getBooleanInput: spyOn(core, "getBooleanInput").mockImplementation(() => false),
     setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
     addPath: spyOn(core, "addPath").mockImplementation(() => {}),
     exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
+    saveState: spyOn(core, "saveState").mockImplementation(() => {}),
+    info: spyOn(core, "info").mockImplementation(() => {}),
+    warning: spyOn(core, "warning").mockImplementation(() => {}),
     setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
     downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
       expect(url).toContain(expectedUrlFragment);
@@ -179,10 +185,16 @@ test("awaits the action entrypoint with omitted version and latest fallback", as
     finishDownload = () => resolve(path.join(os.tmpdir(), "supabase-cli.tar.gz"));
   });
   const spies = {
-    getInput: spyOn(core, "getInput").mockReturnValue(""),
+    getInput: spyOn(core, "getInput").mockImplementation((name: string) =>
+      name === "version" ? "" : "",
+    ),
+    getBooleanInput: spyOn(core, "getBooleanInput").mockImplementation(() => false),
     setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
     addPath: spyOn(core, "addPath").mockImplementation(() => {}),
     exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
+    saveState: spyOn(core, "saveState").mockImplementation(() => {}),
+    info: spyOn(core, "info").mockImplementation(() => {}),
+    warning: spyOn(core, "warning").mockImplementation(() => {}),
     setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
     downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
       expect(url).toContain("/latest/download/");

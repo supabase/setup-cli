@@ -1,13 +1,18 @@
-import { $, semver } from "bun";
 import * as core from "@actions/core";
 import * as tc from "@actions/tool-cache";
+import { load as loadYaml } from "js-yaml";
+import * as semver from "semver";
+import { execFile as execFileCallback } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { getGhcrImageRegistry, getImageRegistry, restoreDockerImageCache } from "./cache";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
 const DEFAULT_VERSION = "latest";
+const execFile = promisify(execFileCallback);
 
 type BunLock = {
   workspaces?: {
@@ -106,7 +111,7 @@ function detectVersionFromPnpmLock(workspaceRoot: string): string | null {
   }
 
   try {
-    const lockfile = Bun.YAML.parse(text) as PnpmLock;
+    const lockfile = loadYaml(text) as PnpmLock;
     const rootImporter = lockfile.importers?.["."];
     const dependency =
       rootImporter?.dependencies?.supabase ?? rootImporter?.devDependencies?.supabase;
@@ -170,15 +175,30 @@ export function getDownloadUrl(version: string): string {
     return `https://github.com/supabase/cli/releases/latest/download/${filename}`;
   }
 
-  if (semver.order(version, REGISTRY_VERSION) === -1) {
+  if (semver.compare(version, REGISTRY_VERSION) === -1) {
     return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`;
   }
 
   return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`;
 }
 
+function getSupabaseExecutable(cliPath: string): string {
+  const names =
+    process.platform === "win32" ? ["supabase.exe", "supabase.cmd", "supabase"] : ["supabase"];
+
+  for (const name of names) {
+    const executable = path.join(cliPath, name);
+    if (existsSync(executable)) {
+      return executable;
+    }
+  }
+
+  return path.join(cliPath, "supabase");
+}
+
 export async function determineInstalledVersion(cliPath: string): Promise<string> {
-  const version = (await $`${path.join(cliPath, "supabase")} --version`.text()).trim();
+  const { stdout } = await execFile(getSupabaseExecutable(cliPath), ["--version"]);
+  const version = stdout.trim();
   if (!version) {
     throw new Error("Could not determine installed Supabase CLI version");
   }
@@ -195,9 +215,11 @@ export async function run(): Promise<void> {
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (version.toLowerCase() === "latest" || semver.order(version, REGISTRY_VERSION) >= 0) {
-      core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
+    if (version.toLowerCase() === "latest" || semver.compare(version, REGISTRY_VERSION) >= 0) {
+      core.exportVariable(CLI_CONFIG_REGISTRY, getGhcrImageRegistry());
     }
+
+    await restoreDockerImageCache(installedVersion, getImageRegistry());
   } catch (error) {
     core.setFailed(error instanceof Error ? error.message : String(error));
   }

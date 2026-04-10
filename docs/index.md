@@ -37,6 +37,21 @@ To pin a specific CLI version:
     version: 2.84.2
 ```
 
+To cache the Docker images pulled by `supabase start`:
+
+```yaml
+- uses: supabase/setup-cli@v2
+  with:
+    version: 2.84.2
+    cache: true
+- run: supabase start
+```
+
+The first run pulls the images from the registry. Later runs can restore the
+same image archive from the GitHub Actions cache before `supabase start` runs.
+Use `cache-key` when your workflow flags or generated config change the image
+set.
+
 ## Resources
 
 - **Source Code**: <https://github.com/supabase/setup-cli>
