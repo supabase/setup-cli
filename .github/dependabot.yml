@@ -8,9 +8,6 @@ updates:
       time: "09:00"
       timezone: Europe/Paris
     open-pull-requests-limit: 1
-    cooldown:
-      semver-minor-days: 7
-      semver-patch-days: 2
     groups:
       actions-minor-patch:
         patterns:
