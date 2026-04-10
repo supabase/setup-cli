@@ -167,39 +167,52 @@ async function getMainModule(): Promise<typeof import("./main.ts")> {
   return mainModule;
 }
 
-async function waitForCalls(assertion: () => void): Promise<void> {
-  let failure: Error | null = null;
-
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      failure = error instanceof Error ? error : new Error(String(error));
-      await Bun.sleep(10);
-    }
-  }
-
-  throw failure ?? new Error("Timed out waiting for action side effects");
-}
-
-test("runs the action entrypoint with omitted version and latest fallback", async () => {
+test("awaits the action entrypoint with omitted version and latest fallback", async () => {
   process.env.GITHUB_WORKSPACE = repo;
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  let startDownload!: () => void;
+  let finishDownload!: () => void;
+  const downloadStarted = new Promise<void>((resolve) => {
+    startDownload = resolve;
+  });
+  const downloadFinished = new Promise<string>((resolve) => {
+    finishDownload = () => resolve(path.join(os.tmpdir(), "supabase-cli.tar.gz"));
+  });
+  const spies = {
+    getInput: spyOn(core, "getInput").mockReturnValue(""),
+    setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
+    addPath: spyOn(core, "addPath").mockImplementation(() => {}),
+    exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
+    setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
+    downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
+      expect(url).toContain("/latest/download/");
+      startDownload();
+      return downloadFinished;
+    }),
+    extractTar: spyOn(tc, "extractTar").mockImplementation(async () => cliDir),
+  };
   const originalArgv1 = process.argv[1];
   process.argv[1] = defaultEntrypoint;
 
   try {
-    await import(`./main.ts?entrypoint=${Date.now()}`);
-    await waitForCalls(() => {
-      expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
-      expect(spies.addPath).toHaveBeenCalledWith(cliDir);
+    let importSettled = false;
+    const entrypoint = import(`./main.ts?entrypoint=${Date.now()}`).finally(() => {
+      importSettled = true;
     });
+
+    await downloadStarted;
+    await Bun.sleep(0);
+
+    expect(importSettled).toBe(false);
+
+    finishDownload();
+    await entrypoint;
   } finally {
     process.argv[1] = originalArgv1 ?? "";
   }
 
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
+  expect(spies.addPath).toHaveBeenCalledWith(cliDir);
   expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
   expect(spies.setFailed).not.toHaveBeenCalled();
 });
