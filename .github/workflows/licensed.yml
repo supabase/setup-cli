@@ -6,12 +6,6 @@ name: Licensed
 
 on:
   pull_request:
-    paths:
-      - .github/workflows/licensed.yml
-      - .licensed.yml
-      - .licenses/**
-      - bun.lock
-      - package.json
   push:
     branches:
       - main
@@ -35,35 +29,61 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      pull-requests: read
 
     steps:
+      - name: Detect license inputs
+        id: license-inputs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > changed-files.txt
+          if grep -Eq '^(\.github/workflows/licensed\.yml|\.licensed\.yml|\.licenses/.*|bun\.lock|package\.json)$' changed-files.txt; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
         id: checkout
+        if: steps.license-inputs.outputs.changed == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Bun
         id: setup-bun
+        if: steps.license-inputs.outputs.changed == 'true'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
       - name: Install Dependencies
         id: bun-install
+        if: steps.license-inputs.outputs.changed == 'true'
         run: bun install --frozen-lockfile
 
       - name: Setup Ruby
         id: setup-ruby
+        if: steps.license-inputs.outputs.changed == 'true'
         uses: ruby/setup-ruby@e65c17d16e57e481586a6a5a0282698790062f92 # v1.300.0
         with:
           ruby-version: ruby
 
       - uses: licensee/setup-licensed@0d52e575b3258417672be0dff2f115d7db8771d8 # v1.3.2
+        if: steps.license-inputs.outputs.changed == 'true'
         with:
           version: 4.x
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check Licenses
         id: check-licenses
+        if: steps.license-inputs.outputs.changed == 'true'
         run: licensed status
 
   update-licenses:
