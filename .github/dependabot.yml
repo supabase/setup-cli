@@ -4,9 +4,17 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 2
+      day: tuesday
+      time: "09:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 1
+    cooldown:
+      semver-minor-days: 7
+      semver-patch-days: 2
     groups:
-      actions-minor:
+      actions-minor-patch:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
@@ -15,15 +23,17 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 2
+      day: tuesday
+      time: "09:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 1
+    cooldown:
+      semver-minor-days: 7
+      semver-patch-days: 2
     groups:
-      bun-development:
-        dependency-type: development
-        update-types:
-          - minor
-          - patch
-      bun-production:
-        dependency-type: production
+      bun-minor-patch:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
