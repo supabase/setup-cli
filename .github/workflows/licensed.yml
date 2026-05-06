@@ -1,6 +1,6 @@
-# This workflow checks the statuses of cached dependencies used in this action
-# with the help of the Licensed tool. If any licenses are invalid or missing,
-# this workflow will fail. See: https://github.com/licensee/licensed
+# This workflow refreshes and checks dependency license records used in this
+# action with the help of the Licensed tool. If any licenses are invalid or
+# missing, this workflow will fail. See: https://github.com/licensee/licensed
 
 name: Licensed
 
@@ -80,6 +80,11 @@ jobs:
         with:
           version: 4.x
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refresh License Cache
+        id: refresh-license-cache
+        if: steps.license-inputs.outputs.changed == 'true'
+        run: licensed cache
 
       - name: Check Licenses
         id: check-licenses
