@@ -32518,6 +32518,8 @@ function requireSemver () {
 var semverExports = requireSemver();
 
 const doExec = promisify(exec$1);
+const VERSIONED_ARCHIVE_VERSION = '2.99.0';
+const LATEST_RELEASE_URL = 'https://api.github.com/repos/supabase/cli/releases/latest';
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
 const mapArch = (arch) => {
@@ -32534,17 +32536,45 @@ const mapOS = (platform) => {
     };
     return mappings[platform] || platform;
 };
-const getDownloadUrl = async (version) => {
-    const platform = mapOS(require$$0.platform());
-    const arch = mapArch(require$$0.arch());
-    const filename = `supabase_${platform}_${arch}.tar.gz`;
-    if (version.toLowerCase() === 'latest') {
-        return `https://github.com/supabase/cli/releases/latest/download/${filename}`;
+const normalizeVersion = (version) => version.replace(/^v/i, '');
+const resolveLatestVersion = async () => {
+    const response = await fetch(LATEST_RELEASE_URL);
+    if (!response.ok) {
+        throw new Error(`Failed to resolve latest Supabase CLI release: ${response.statusText}`);
     }
+    const release = (await response.json());
+    if (typeof release.tag_name !== 'string') {
+        throw new Error('Failed to resolve latest Supabase CLI release: missing tag name');
+    }
+    return normalizeVersion(release.tag_name);
+};
+const getArchiveFormat = (version, platform) => {
+    if (platform === 'win32' && semverExports.gte(version, VERSIONED_ARCHIVE_VERSION)) {
+        return 'zip';
+    }
+    return 'tar';
+};
+const getArchiveFilename = (version, platform, arch) => {
+    const archivePlatform = mapOS(platform);
+    const archiveArch = mapArch(arch);
     if (semverExports.lt(version, '1.28.0')) {
-        return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`;
+        return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`;
     }
-    return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`;
+    if (semverExports.gte(version, VERSIONED_ARCHIVE_VERSION)) {
+        const extension = platform === 'win32' ? 'zip' : 'tar.gz';
+        return `supabase_${version}_${archivePlatform}_${archiveArch}.${extension}`;
+    }
+    return `supabase_${archivePlatform}_${archiveArch}.tar.gz`;
+};
+const getDownloadArchive = async (version, platform = require$$0.platform(), arch = require$$0.arch()) => {
+    const resolvedVersion = version.toLowerCase() === 'latest'
+        ? await resolveLatestVersion()
+        : normalizeVersion(version);
+    const filename = getArchiveFilename(resolvedVersion, platform, arch);
+    return {
+        url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
+        format: getArchiveFormat(resolvedVersion, platform)
+    };
 };
 const determineInstalledVersion = async () => {
     const { stdout } = await doExec('supabase --version');
@@ -32566,10 +32596,12 @@ async function run() {
         // Get version of tool to be installed
         const version = coreExports.getInput('version');
         // Download the specific version of the tool, e.g. as a tarball/zipball
-        const download = await getDownloadUrl(version);
-        const pathToTarball = await toolCacheExports.downloadTool(download);
+        const download = await getDownloadArchive(version);
+        const pathToArchive = await toolCacheExports.downloadTool(download.url);
         // Extract the tarball/zipball onto host runner
-        const pathToCLI = await toolCacheExports.extractTar(pathToTarball);
+        const pathToCLI = download.format === 'zip'
+            ? await toolCacheExports.extractZip(pathToArchive)
+            : await toolCacheExports.extractTar(pathToArchive);
         // Expose the tool by adding it to the PATH
         coreExports.addPath(pathToCLI);
         // Expose installed tool version

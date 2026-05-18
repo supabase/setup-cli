@@ -1,4 +1,4 @@
-import { getDownloadUrl } from '../src/utils'
+import { getDownloadArchive, getDownloadUrl } from '../src/utils'
 import { CLI_CONFIG_REGISTRY } from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
@@ -7,7 +7,11 @@ import * as path from 'path'
 import * as fs from 'fs'
 import * as yaml from 'js-yaml'
 import * as url from 'url'
-import { expect, test } from '@jest/globals'
+import { afterEach, expect, jest, test } from '@jest/globals'
+
+afterEach(() => {
+  jest.restoreAllMocks()
+})
 
 test('gets download url to binary', async () => {
   const url = await getDownloadUrl('1.28.0')
@@ -31,10 +35,42 @@ test('gets legacy download url to binary', async () => {
 })
 
 test('gets download url to latest version', async () => {
-  const url = await getDownloadUrl('latest')
-  expect(url).toMatch(
-    'https://github.com/supabase/cli/releases/latest/download/'
+  jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(JSON.stringify({ tag_name: 'v2.99.0' }), {
+      status: 200,
+      statusText: 'OK'
+    })
   )
+
+  const url = await getDownloadUrl('latest')
+  expect(url).toContain('/download/v2.99.0/supabase_2.99.0_')
+  expect(url).toMatch(/\.tar\.gz$|\.zip$/)
+})
+
+test('gets versioned archive url to binary from Supabase CLI v2.99.0', async () => {
+  const archive = await getDownloadArchive('2.99.0', 'linux', 'x64')
+
+  expect(archive).toEqual({
+    url: 'https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_linux_amd64.tar.gz',
+    format: 'tar'
+  })
+})
+
+test('gets versioned zip archive url on Windows from Supabase CLI v2.99.0', async () => {
+  const archive = await getDownloadArchive('2.99.0', 'win32', 'x64')
+
+  expect(archive).toEqual({
+    url: 'https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_windows_amd64.zip',
+    format: 'zip'
+  })
+})
+
+test('keeps unversioned archive url to binary before Supabase CLI v2.99.0', async () => {
+  const url = await getDownloadUrl('2.98.2')
+
+  expect(url).toContain('/download/v2.98.2/supabase_')
+  expect(url).not.toContain('supabase_2.98.2_')
+  expect(url).toMatch(/\.tar\.gz$/)
 })
 
 // shows how the runner will run a javascript action with env / stdout protocol

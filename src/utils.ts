@@ -1,9 +1,19 @@
 import { exec } from 'child_process'
 import os from 'os'
-import { lt } from 'semver'
+import { gte, lt } from 'semver'
 import { promisify } from 'util'
 
 const doExec = promisify(exec)
+const VERSIONED_ARCHIVE_VERSION = '2.99.0'
+const LATEST_RELEASE_URL =
+  'https://api.github.com/repos/supabase/cli/releases/latest'
+
+export type ArchiveFormat = 'tar' | 'zip'
+
+export type DownloadArchive = {
+  url: string
+  format: ArchiveFormat
+}
 
 // arch in [arm, arm64, x64...] (https://nodejs.org/docs/latest-v16.x/api/os.html#osarch)
 // return value in [amd64, arm64, arm]
@@ -23,17 +33,73 @@ const mapOS = (platform: string): string => {
   return mappings[platform] || platform
 }
 
-export const getDownloadUrl = async (version: string): Promise<string> => {
-  const platform = mapOS(os.platform())
-  const arch = mapArch(os.arch())
-  const filename = `supabase_${platform}_${arch}.tar.gz`
-  if (version.toLowerCase() === 'latest') {
-    return `https://github.com/supabase/cli/releases/latest/download/${filename}`
+const normalizeVersion = (version: string): string => version.replace(/^v/i, '')
+
+const resolveLatestVersion = async (): Promise<string> => {
+  const response = await fetch(LATEST_RELEASE_URL)
+  if (!response.ok) {
+    throw new Error(
+      `Failed to resolve latest Supabase CLI release: ${response.statusText}`
+    )
   }
+
+  const release = (await response.json()) as { tag_name?: unknown }
+  if (typeof release.tag_name !== 'string') {
+    throw new Error(
+      'Failed to resolve latest Supabase CLI release: missing tag name'
+    )
+  }
+
+  return normalizeVersion(release.tag_name)
+}
+
+const getArchiveFormat = (version: string, platform: string): ArchiveFormat => {
+  if (platform === 'win32' && gte(version, VERSIONED_ARCHIVE_VERSION)) {
+    return 'zip'
+  }
+
+  return 'tar'
+}
+
+const getArchiveFilename = (
+  version: string,
+  platform: string,
+  arch: string
+): string => {
+  const archivePlatform = mapOS(platform)
+  const archiveArch = mapArch(arch)
   if (lt(version, '1.28.0')) {
-    return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`
+    return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`
   }
-  return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`
+
+  if (gte(version, VERSIONED_ARCHIVE_VERSION)) {
+    const extension = platform === 'win32' ? 'zip' : 'tar.gz'
+    return `supabase_${version}_${archivePlatform}_${archiveArch}.${extension}`
+  }
+
+  return `supabase_${archivePlatform}_${archiveArch}.tar.gz`
+}
+
+export const getDownloadArchive = async (
+  version: string,
+  platform = os.platform(),
+  arch = os.arch()
+): Promise<DownloadArchive> => {
+  const resolvedVersion =
+    version.toLowerCase() === 'latest'
+      ? await resolveLatestVersion()
+      : normalizeVersion(version)
+  const filename = getArchiveFilename(resolvedVersion, platform, arch)
+
+  return {
+    url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
+    format: getArchiveFormat(resolvedVersion, platform)
+  }
+}
+
+export const getDownloadUrl = async (version: string): Promise<string> => {
+  const archive = await getDownloadArchive(version)
+  return archive.url
 }
 
 export const determineInstalledVersion = async (): Promise<string> => {
