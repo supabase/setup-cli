@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
+// Starting with this release, the CLI publishes only version-prefixed tarballs
+// (e.g. supabase_2.99.0_linux_amd64.tar.gz); the unversioned aliases that used
+// to live alongside them are no longer uploaded. See supabase/cli#5257.
+const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
+const LATEST_RELEASE_URL = "https://github.com/supabase/cli/releases/latest";
 
 type BunLock = {
   workspaces?: {
@@ -161,20 +166,36 @@ function resolveVersion(inputVersion: string): string {
   );
 }
 
+export async function resolveLatestVersion(): Promise<string> {
+  const response = await fetch(LATEST_RELEASE_URL, { method: "HEAD", redirect: "manual" });
+  const location = response.headers.get("location");
+  const version = extractConcreteVersion(location ?? undefined);
+
+  if (!version) {
+    throw new Error(
+      `Could not resolve latest Supabase CLI version (status ${response.status}, location ${location ?? "<none>"})`,
+    );
+  }
+
+  return version;
+}
+
 export function getDownloadUrl(version: string): string {
   const platform = getArchivePlatform(process.platform);
   const arch = getArchiveArch(process.arch);
-  const filename = `supabase_${platform}_${arch}.tar.gz`;
+  const versionedFilename = `supabase_${version}_${platform}_${arch}.tar.gz`;
+  const unversionedFilename = `supabase_${platform}_${arch}.tar.gz`;
 
-  if (version.toLowerCase() === "latest") {
-    return `https://github.com/supabase/cli/releases/latest/download/${filename}`;
+  // v2.99.0+ and the earliest releases (pre-v1.28.0) only publish version-prefixed
+  // tarballs; the intermediate releases publish unversioned aliases.
+  if (
+    semver.order(version, REGISTRY_VERSION) === -1 ||
+    semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0
+  ) {
+    return `https://github.com/supabase/cli/releases/download/v${version}/${versionedFilename}`;
   }
 
-  if (semver.order(version, REGISTRY_VERSION) === -1) {
-    return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`;
-  }
-
-  return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`;
+  return `https://github.com/supabase/cli/releases/download/v${version}/${unversionedFilename}`;
 }
 
 export async function determineInstalledVersion(cliPath: string): Promise<string> {
@@ -188,14 +209,16 @@ export async function determineInstalledVersion(cliPath: string): Promise<string
 
 export async function run(): Promise<void> {
   try {
-    const version = resolveVersion(core.getInput("version"));
+    const requestedVersion = resolveVersion(core.getInput("version"));
+    const version =
+      requestedVersion.toLowerCase() === "latest" ? await resolveLatestVersion() : requestedVersion;
     const tarball = await tc.downloadTool(getDownloadUrl(version));
     const cliPath = await tc.extractTar(tarball);
     const installedVersion = await determineInstalledVersion(cliPath);
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (version.toLowerCase() === "latest" || semver.order(version, REGISTRY_VERSION) >= 0) {
+    if (semver.order(version, REGISTRY_VERSION) >= 0) {
       core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
     }
   } catch (error) {

@@ -159,6 +159,16 @@ function createActionSpies(inputVersion: string, cliDir: string, expectedUrlFrag
   };
 }
 
+function mockLatestRelease(version: string) {
+  const response = new Response(null, {
+    status: 302,
+    headers: { location: `https://github.com/supabase/cli/releases/tag/v${version}` },
+  });
+  return spyOn(globalThis, "fetch").mockImplementation(
+    (async () => response) as unknown as typeof fetch,
+  );
+}
+
 async function getMainModule(): Promise<typeof import("./main.ts")> {
   if (!mainModule) {
     mainModule = await import("./main.ts");
@@ -170,6 +180,7 @@ async function getMainModule(): Promise<typeof import("./main.ts")> {
 test("awaits the action entrypoint with omitted version and latest fallback", async () => {
   process.env.GITHUB_WORKSPACE = repo;
   const cliDir = createFakeCli("supabase 2.84.2");
+  mockLatestRelease("2.84.2");
   let startDownload!: () => void;
   let finishDownload!: () => void;
   const downloadStarted = new Promise<void>((resolve) => {
@@ -185,7 +196,7 @@ test("awaits the action entrypoint with omitted version and latest fallback", as
     exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
     setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
     downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
-      expect(url).toContain("/latest/download/");
+      expect(url).toContain("/download/v2.84.2/supabase_");
       startDownload();
       return downloadFinished;
     }),
@@ -284,7 +295,8 @@ test("falls back to latest when version is omitted and no supported root lockfil
     "README.md": "# app\n",
   });
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  mockLatestRelease("2.84.2");
+  const spies = createActionSpies("", cliDir, "/download/v2.84.2/supabase_");
   const { run } = await getMainModule();
 
   await run();
@@ -297,7 +309,8 @@ test("falls back to latest when version is omitted and no supported root lockfil
 test("falls back to latest when version is omitted and no workspace is available", async () => {
   delete process.env.GITHUB_WORKSPACE;
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  mockLatestRelease("2.84.2");
+  const spies = createActionSpies("", cliDir, "/download/v2.84.2/supabase_");
   const { run } = await getMainModule();
 
   await run();
@@ -361,7 +374,8 @@ test("falls through unreadable bun.lock paths and malformed package-lock files t
   mkdirSync(path.join(workspace, "bun.lock"), { recursive: true });
   process.env.GITHUB_WORKSPACE = workspace;
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  mockLatestRelease("2.84.2");
+  const spies = createActionSpies("", cliDir, "/download/v2.84.2/supabase_");
   const { run } = await getMainModule();
 
   await run();
@@ -376,7 +390,8 @@ test("falls back to latest when a pnpm dependency entry has no concrete version"
     "pnpm-lock.yaml": createPnpmLock("2.49.0", { includeVersion: false }),
   });
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  mockLatestRelease("2.84.2");
+  const spies = createActionSpies("", cliDir, "/download/v2.84.2/supabase_");
   const { run } = await getMainModule();
 
   await run();
@@ -399,6 +414,52 @@ test("explicit version overrides detected root lockfiles", async () => {
   expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 1.0.0");
   expect(spies.exportVariable).not.toHaveBeenCalled();
   expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("downloads the version-prefixed tarball for releases >= 2.99.0", async () => {
+  // Regression for supabase/cli#5257: from v2.99.0 onward the CLI only
+  // publishes supabase_<version>_<platform>_<arch>.tar.gz; the unversioned
+  // alias is gone.
+  delete process.env.GITHUB_WORKSPACE;
+  const cliDir = createFakeCli("supabase 2.99.0");
+  mockLatestRelease("2.99.0");
+  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.99.0");
+  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("downloads the version-prefixed tarball when explicit version >= 2.99.0 is requested", async () => {
+  delete process.env.GITHUB_WORKSPACE;
+  const cliDir = createFakeCli("supabase 2.99.0");
+  const fetchSpy = spyOn(globalThis, "fetch");
+  const spies = createActionSpies("2.99.0", cliDir, "/download/v2.99.0/supabase_2.99.0_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(fetchSpy).not.toHaveBeenCalled();
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.99.0");
+  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("fails when the latest release redirect does not include a version tag", async () => {
+  delete process.env.GITHUB_WORKSPACE;
+  const cliDir = createFakeCli("supabase 2.99.0");
+  const response = new Response(null, { status: 302, headers: { location: "/releases" } });
+  spyOn(globalThis, "fetch").mockImplementation((async () => response) as unknown as typeof fetch);
+  const spies = createActionSpies("", cliDir, "/download/");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.downloadTool).not.toHaveBeenCalled();
+  expect(spies.setFailed).toHaveBeenCalled();
 });
 
 test("fails when the installed CLI does not report a version", async () => {
