@@ -16,9 +16,22 @@ on:
     # * is a special character in YAML so you have to quote this string
     - cron: "30 1,9 * * *"
   workflow_dispatch:
+    inputs:
+      cli_version:
+        description: Specific Supabase CLI version to test. When set, the matrix runs only this version across all supported Postgres majors. Leave empty to run the full version matrix.
+        required: false
+        type: string
+        default: ""
+  # Triggered from supabase/cli after a successful beta release so the
+  # symmetric e2e runs before a stale archive layout (or any other
+  # packaging change) reaches the stable channel. The dispatcher sends
+  # `client_payload.version` (e.g. "2.99.0") and `client_payload.channel`.
+  repository_dispatch:
+    types:
+      - cli-released
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.cli_version || github.event.client_payload.version }}
   cancel-in-progress: true
 
 defaults:
@@ -29,24 +42,50 @@ permissions:
   contents: read
 
 jobs:
-  e2e: # make sure the action works on a clean machine without building
+  plan:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.compute.outputs.matrix }}
+      cli_version: ${{ steps.compute.outputs.cli_version }}
+      source: ${{ steps.compute.outputs.source }}
+    steps:
+      - id: compute
+        env:
+          DISPATCH_VERSION: ${{ github.event.inputs.cli_version }}
+          PAYLOAD_VERSION: ${{ github.event.client_payload.version }}
+          PAYLOAD_CHANNEL: ${{ github.event.client_payload.channel }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          version=""
+          source="default"
+          if [[ "$EVENT_NAME" == "repository_dispatch" && -n "$PAYLOAD_VERSION" ]]; then
+            version="${PAYLOAD_VERSION#v}"
+            source="cli-${PAYLOAD_CHANNEL:-release}"
+          elif [[ -n "$DISPATCH_VERSION" ]]; then
+            version="${DISPATCH_VERSION#v}"
+            source="workflow_dispatch"
+          fi
+          if [[ -n "$version" ]]; then
+            matrix='{"version":["'"$version"'"],"pg_major":[14,15,17]}'
+          else
+            matrix='{"version":["1.178.2","2.33.0","latest"],"pg_major":[14,15,17],"exclude":[{"version":"1.178.2","pg_major":17}]}'
+          fi
+          {
+            echo "cli_version=$version"
+            echo "source=$source"
+            echo "matrix=$matrix"
+          } >> "$GITHUB_OUTPUT"
+
+  e2e: # make sure the action works on a clean machine without building
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        version:
-          - 1.178.2
-          - 2.33.0
-          - latest
-        pg_major:
-          - 14
-          - 15
-          - 17
-        exclude:
-          - version: 1.178.2
-            pg_major: 17
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
