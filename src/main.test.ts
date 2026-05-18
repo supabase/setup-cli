@@ -156,7 +156,17 @@ function createActionSpies(inputVersion: string, cliDir: string, expectedUrlFrag
       return path.join(os.tmpdir(), "supabase-cli.tar.gz");
     }),
     extractTar: spyOn(tc, "extractTar").mockImplementation(async () => cliDir),
+    extractZip: spyOn(tc, "extractZip").mockImplementation(async () => cliDir),
   };
+}
+
+function mockLatestRelease(version = "v2.99.0") {
+  return spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ tag_name: version }), {
+      status: 200,
+      statusText: "OK",
+    }),
+  );
 }
 
 async function getMainModule(): Promise<typeof import("./main.ts")> {
@@ -167,8 +177,54 @@ async function getMainModule(): Promise<typeof import("./main.ts")> {
   return mainModule;
 }
 
+test("uses versioned tar archives for Supabase CLI v2.99.0 and later", async () => {
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("2.99.0", "linux", "x64");
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_linux_amd64.tar.gz",
+    format: "tar",
+  });
+});
+
+test("keeps the unversioned tar archive layout before Supabase CLI v2.99.0", async () => {
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("2.98.2", "linux", "x64");
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.98.2/supabase_linux_amd64.tar.gz",
+    format: "tar",
+  });
+});
+
+test("uses versioned zip archives for Windows Supabase CLI v2.99.0 and later", async () => {
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("2.99.0", "win32", "x64");
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_windows_amd64.zip",
+    format: "zip",
+  });
+});
+
+test("resolves latest before choosing a versioned Supabase CLI archive", async () => {
+  mockLatestRelease("v2.99.0");
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("latest", "darwin", "arm64");
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_darwin_arm64.tar.gz",
+    format: "tar",
+  });
+});
+
 test("awaits the action entrypoint with omitted version and latest fallback", async () => {
   process.env.GITHUB_WORKSPACE = repo;
+  mockLatestRelease();
   const cliDir = createFakeCli("supabase 2.84.2");
   let startDownload!: () => void;
   let finishDownload!: () => void;
@@ -185,11 +241,12 @@ test("awaits the action entrypoint with omitted version and latest fallback", as
     exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
     setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
     downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
-      expect(url).toContain("/latest/download/");
+      expect(url).toContain("/download/v2.99.0/supabase_2.99.0_");
       startDownload();
       return downloadFinished;
     }),
     extractTar: spyOn(tc, "extractTar").mockImplementation(async () => cliDir),
+    extractZip: spyOn(tc, "extractZip").mockImplementation(async () => cliDir),
   };
   const originalArgv1 = process.argv[1];
   process.argv[1] = defaultEntrypoint;
@@ -283,8 +340,9 @@ test("falls back to latest when version is omitted and no supported root lockfil
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "README.md": "# app\n",
   });
+  mockLatestRelease();
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
   const { run } = await getMainModule();
 
   await run();
@@ -296,8 +354,9 @@ test("falls back to latest when version is omitted and no supported root lockfil
 
 test("falls back to latest when version is omitted and no workspace is available", async () => {
   delete process.env.GITHUB_WORKSPACE;
+  mockLatestRelease();
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
   const { run } = await getMainModule();
 
   await run();
@@ -360,8 +419,9 @@ test("falls through unreadable bun.lock paths and malformed package-lock files t
   });
   mkdirSync(path.join(workspace, "bun.lock"), { recursive: true });
   process.env.GITHUB_WORKSPACE = workspace;
+  mockLatestRelease();
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
   const { run } = await getMainModule();
 
   await run();
@@ -375,8 +435,9 @@ test("falls back to latest when a pnpm dependency entry has no concrete version"
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "pnpm-lock.yaml": createPnpmLock("2.49.0", { includeVersion: false }),
   });
+  mockLatestRelease();
   const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/latest/download/");
+  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
   const { run } = await getMainModule();
 
   await run();

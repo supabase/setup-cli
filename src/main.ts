@@ -7,7 +7,16 @@ import { fileURLToPath } from "node:url";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
+const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
+const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
+
+type ArchiveFormat = "tar" | "zip";
+
+type DownloadArchive = {
+  url: string;
+  format: ArchiveFormat;
+};
 
 type BunLock = {
   workspaces?: {
@@ -54,6 +63,10 @@ function extractConcreteVersion(raw: string | undefined): string | null {
 
   const match = raw.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/);
   return match?.[0] ?? null;
+}
+
+function normalizeVersion(version: string): string {
+  return version.replace(/^v/i, "");
 }
 
 function readWorkspaceLockfile(workspaceRoot: string, filename: string): string | null {
@@ -161,24 +174,83 @@ function resolveVersion(inputVersion: string): string {
   );
 }
 
-export function getDownloadUrl(version: string): string {
-  const platform = getArchivePlatform(process.platform);
-  const arch = getArchiveArch(process.arch);
-  const filename = `supabase_${platform}_${arch}.tar.gz`;
-
-  if (version.toLowerCase() === "latest") {
-    return `https://github.com/supabase/cli/releases/latest/download/${filename}`;
+async function resolveLatestVersion(): Promise<string> {
+  const response = await fetch(GITHUB_RELEASES_API);
+  if (!response.ok) {
+    throw new Error(`Failed to resolve latest Supabase CLI release: ${response.statusText}`);
   }
+
+  const release = (await response.json()) as { tag_name?: unknown };
+  if (typeof release.tag_name !== "string") {
+    throw new Error("Failed to resolve latest Supabase CLI release: missing tag name");
+  }
+
+  return normalizeVersion(release.tag_name);
+}
+
+function getArchiveFormat(version: string, platform: NodeJS.Platform): ArchiveFormat {
+  if (platform === "win32" && semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0) {
+    return "zip";
+  }
+
+  return "tar";
+}
+
+function getArchiveFilename(
+  version: string,
+  platform: NodeJS.Platform,
+  arch: NodeJS.Architecture,
+): string {
+  const archivePlatform = getArchivePlatform(platform);
+  const archiveArch = getArchiveArch(arch);
 
   if (semver.order(version, REGISTRY_VERSION) === -1) {
-    return `https://github.com/supabase/cli/releases/download/v${version}/supabase_${version}_${platform}_${arch}.tar.gz`;
+    return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`;
   }
 
-  return `https://github.com/supabase/cli/releases/download/v${version}/${filename}`;
+  if (semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0) {
+    const extension = platform === "win32" ? "zip" : "tar.gz";
+    return `supabase_${version}_${archivePlatform}_${archiveArch}.${extension}`;
+  }
+
+  return `supabase_${archivePlatform}_${archiveArch}.tar.gz`;
+}
+
+export async function getDownloadArchive(
+  version: string,
+  platform = process.platform,
+  arch = process.arch,
+): Promise<DownloadArchive> {
+  const resolvedVersion =
+    version.toLowerCase() === "latest" ? await resolveLatestVersion() : normalizeVersion(version);
+  const filename = getArchiveFilename(resolvedVersion, platform, arch);
+
+  return {
+    url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
+    format: getArchiveFormat(resolvedVersion, platform),
+  };
+}
+
+function getCliExecutablePath(cliPath: string): string {
+  if (process.platform !== "win32") {
+    return path.join(cliPath, "supabase");
+  }
+
+  const exePath = path.join(cliPath, "supabase.exe");
+  if (existsSync(exePath)) {
+    return exePath;
+  }
+
+  const cmdPath = path.join(cliPath, "supabase.cmd");
+  if (existsSync(cmdPath)) {
+    return cmdPath;
+  }
+
+  return path.join(cliPath, "supabase");
 }
 
 export async function determineInstalledVersion(cliPath: string): Promise<string> {
-  const version = (await $`${path.join(cliPath, "supabase")} --version`.text()).trim();
+  const version = (await $`${getCliExecutablePath(cliPath)} --version`.text()).trim();
   if (!version) {
     throw new Error("Could not determine installed Supabase CLI version");
   }
@@ -189,8 +261,12 @@ export async function determineInstalledVersion(cliPath: string): Promise<string
 export async function run(): Promise<void> {
   try {
     const version = resolveVersion(core.getInput("version"));
-    const tarball = await tc.downloadTool(getDownloadUrl(version));
-    const cliPath = await tc.extractTar(tarball);
+    const archive = await getDownloadArchive(version);
+    const archivePath = await tc.downloadTool(archive.url);
+    const cliPath =
+      archive.format === "zip"
+        ? await tc.extractZip(archivePath)
+        : await tc.extractTar(archivePath);
     const installedVersion = await determineInstalledVersion(cliPath);
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
