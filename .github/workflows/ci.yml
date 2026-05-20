@@ -52,6 +52,7 @@ jobs:
       - uses: ./
         with:
           version: ${{ matrix.version }}
+          github-token: ${{ github.token }}
       - run: supabase -h
 
   ci:
