@@ -4,7 +4,8 @@ import { gte } from 'semver'
 import {
   getDownloadArchive,
   determineInstalledVersion,
-  getCliPath
+  getCliPath,
+  installAlpineRuntimeDependencies
 } from './utils.js'
 
 export const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
@@ -36,6 +37,8 @@ export async function run(): Promise<void> {
         ? await tc.extractZip(pathToArchive)
         : await tc.extractTar(pathToArchive)
     const pathToCLI = getCliPath(extractedPath, download.format)
+
+    await installAlpineRuntimeDependencies(download.format)
 
     // Expose the tool by adding it to the PATH
     core.addPath(pathToCLI)
