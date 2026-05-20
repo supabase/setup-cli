@@ -50,6 +50,51 @@ runs:
 
         echo "url=https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-linux-${arch}-musl.zip" >> "$GITHUB_OUTPUT"
 
+    - name: Install Alpine Runtime Dependencies
+      shell: sh
+      run: |
+        set -eu
+
+        if [ "${RUNNER_OS}" != "Linux" ]; then
+          exit 0
+        fi
+
+        is_musl=false
+        if [ -f /etc/alpine-release ]; then
+          is_musl=true
+        elif command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+          is_musl=true
+        fi
+
+        if [ "${is_musl}" != "true" ]; then
+          exit 0
+        fi
+
+        # Bun's musl binary and the Supabase CLI shim both dynamically link libstdc++ and libgcc.
+        if command -v apk >/dev/null 2>&1; then
+          missing_packages=""
+          for package in libstdc++ libgcc; do
+            if ! apk info -e "${package}" >/dev/null 2>&1; then
+              missing_packages="${missing_packages} ${package}"
+            fi
+          done
+
+          if [ -z "${missing_packages}" ]; then
+            exit 0
+          fi
+
+          if [ "$(id -u)" != "0" ]; then
+            echo "::error::Alpine/musl containers need${missing_packages} to run Supabase CLI. Add 'apk add --no-cache${missing_packages}' before supabase/setup-cli, or run this job container as root."
+            exit 1
+          fi
+
+          apk add --no-cache ${missing_packages}
+          exit 0
+        fi
+
+        echo "::error::Linux musl containers need libstdc++ and libgcc to run Supabase CLI. Install them before supabase/setup-cli."
+        exit 1
+
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
