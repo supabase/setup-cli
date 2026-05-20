@@ -44,6 +44,7 @@ steps:
   - uses: supabase/setup-cli@v1
     with:
       version: latest
+      github-token: ${{ github.token }}
   - run: supabase init
   - run: supabase db start
 ```
@@ -55,9 +56,10 @@ on Windows and macOS runners.
 
 The actions supports the following inputs:
 
-| Name      | Type   | Description                        | Default  | Required |
-| --------- | ------ | ---------------------------------- | -------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | `2.20.3` | false    |
+| Name           | Type   | Description                                                                | Default  | Required |
+| -------------- | ------ | -------------------------------------------------------------------------- | -------- | -------- |
+| `version`      | String | Supabase CLI version (or `latest`)                                         | `2.20.3` | false    |
+| `github-token` | String | GitHub token used to resolve `latest` without unauthenticated API limiting |          | false    |
 
 ## Advanced Usage
 
@@ -135,8 +137,8 @@ need to perform some initial setup steps before you can develop your action.
 
 ## Publish to a distribution branch
 
-Actions are run from this GitHub repository so we will checkin the packed `dist`
-folder.
+Actions are run from this GitHub repository so we will check in the packed
+`dist` folder.
 
 1. Create a new GitHub release
 2. Rebase `v1` branch on `main`
@@ -155,6 +157,7 @@ repository (see [test.yml](.github/workflows/test.yml))
 uses: ./
 with:
   version: latest
+  github-token: ${{ github.token }}
 ```
 
 See the [actions tab](https://github.com/supabase/setup-cli/actions) for runs of

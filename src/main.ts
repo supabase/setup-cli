@@ -1,7 +1,11 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
 import { gte } from 'semver'
-import { getDownloadArchive, determineInstalledVersion } from './utils.js'
+import {
+  getDownloadArchive,
+  determineInstalledVersion,
+  getCliPath
+} from './utils.js'
 
 export const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
 
@@ -14,16 +18,24 @@ export async function run(): Promise<void> {
   try {
     // Get version of tool to be installed
     const version = core.getInput('version')
+    const githubToken = core.getInput('github-token')
 
     // Download the specific version of the tool, e.g. as a tarball/zipball
-    const download = await getDownloadArchive(version)
+    const download = await getDownloadArchive(
+      version,
+      undefined,
+      undefined,
+      undefined,
+      githubToken
+    )
     const pathToArchive = await tc.downloadTool(download.url)
 
     // Extract the tarball/zipball onto host runner
-    const pathToCLI =
+    const extractedPath =
       download.format === 'zip'
         ? await tc.extractZip(pathToArchive)
         : await tc.extractTar(pathToArchive)
+    const pathToCLI = getCliPath(extractedPath, download.format)
 
     // Expose the tool by adding it to the PATH
     core.addPath(pathToCLI)
