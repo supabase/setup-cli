@@ -137,8 +137,8 @@ need to perform some initial setup steps before you can develop your action.
 
 ## Publish to a distribution branch
 
-Actions are run from this GitHub repository so we will checkin the packed `dist`
-folder.
+Actions are run from this GitHub repository so we will check in the packed
+`dist` folder.
 
 1. Create a new GitHub release
 2. Rebase `v1` branch on `main`
