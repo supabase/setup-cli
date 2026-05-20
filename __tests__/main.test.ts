@@ -1,4 +1,4 @@
-import { getDownloadArchive, getDownloadUrl } from '../src/utils'
+import { getCliPath, getDownloadArchive, getDownloadUrl } from '../src/utils'
 import { CLI_CONFIG_REGISTRY } from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
@@ -54,6 +54,30 @@ test('gets versioned archive url to binary from Supabase CLI v2.99.0', async () 
     url: 'https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_linux_amd64.tar.gz',
     format: 'tar'
   })
+})
+
+test('gets apk archive url on Linux musl from Supabase CLI v2.99.0', async () => {
+  const archive = await getDownloadArchive('2.99.0', 'linux', 'x64', true)
+
+  expect(archive).toEqual({
+    url: 'https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_linux_amd64.apk',
+    format: 'apk'
+  })
+})
+
+test('keeps tar archives before Supabase CLI v2.99.0 on Linux musl', async () => {
+  const archive = await getDownloadArchive('2.98.2', 'linux', 'x64', true)
+
+  expect(archive).toEqual({
+    url: 'https://github.com/supabase/cli/releases/download/v2.98.2/supabase_linux_amd64.tar.gz',
+    format: 'tar'
+  })
+})
+
+test('uses usr/bin as the CLI path for apk archives', () => {
+  expect(getCliPath('/tmp/extracted', 'apk')).toBe('/tmp/extracted/usr/bin')
+  expect(getCliPath('/tmp/extracted', 'tar')).toBe('/tmp/extracted')
+  expect(getCliPath('/tmp/extracted', 'zip')).toBe('/tmp/extracted')
 })
 
 test('gets versioned zip archive url on Windows from Supabase CLI v2.99.0', async () => {

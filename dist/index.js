@@ -1,6 +1,6 @@
 import require$$0 from 'os';
 import require$$0$1 from 'crypto';
-import require$$1 from 'fs';
+import require$$1, { existsSync } from 'fs';
 import require$$1$5 from 'path';
 import require$$2 from 'http';
 import require$$3 from 'https';
@@ -32548,17 +32548,41 @@ const resolveLatestVersion = async () => {
     }
     return normalizeVersion(release.tag_name);
 };
-const getArchiveFormat = (version, platform) => {
+const detectMuslLinux = async (platform = require$$0.platform()) => {
+    if (platform !== 'linux') {
+        return false;
+    }
+    if (existsSync('/etc/alpine-release')) {
+        return true;
+    }
+    try {
+        const { stdout, stderr } = await doExec('ldd --version');
+        return `${stdout}\n${stderr}`.toLowerCase().includes('musl');
+    }
+    catch (error) {
+        const output = error instanceof Error ? error.message : String(error);
+        return output.toLowerCase().includes('musl');
+    }
+};
+const getArchiveFormat = (version, platform, isMuslLinux) => {
+    if (platform === 'linux' &&
+        isMuslLinux &&
+        semverExports.gte(version, VERSIONED_ARCHIVE_VERSION)) {
+        return 'apk';
+    }
     if (platform === 'win32' && semverExports.gte(version, VERSIONED_ARCHIVE_VERSION)) {
         return 'zip';
     }
     return 'tar';
 };
-const getArchiveFilename = (version, platform, arch) => {
+const getArchiveFilename = (version, platform, arch, format) => {
     const archivePlatform = mapOS(platform);
     const archiveArch = mapArch(arch);
     if (semverExports.lt(version, '1.28.0')) {
         return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`;
+    }
+    if (platform === 'linux' && format === 'apk') {
+        return `supabase_${version}_${archivePlatform}_${archiveArch}.apk`;
     }
     if (semverExports.gte(version, VERSIONED_ARCHIVE_VERSION)) {
         const extension = platform === 'win32' ? 'zip' : 'tar.gz';
@@ -32566,15 +32590,19 @@ const getArchiveFilename = (version, platform, arch) => {
     }
     return `supabase_${archivePlatform}_${archiveArch}.tar.gz`;
 };
-const getDownloadArchive = async (version, platform = require$$0.platform(), arch = require$$0.arch()) => {
+const getDownloadArchive = async (version, platform = require$$0.platform(), arch = require$$0.arch(), isMuslLinux) => {
     const resolvedVersion = version.toLowerCase() === 'latest'
         ? await resolveLatestVersion()
         : normalizeVersion(version);
-    const filename = getArchiveFilename(resolvedVersion, platform, arch);
+    const format = getArchiveFormat(resolvedVersion, platform, (await detectMuslLinux(platform)));
+    const filename = getArchiveFilename(resolvedVersion, platform, arch, format);
     return {
         url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
-        format: getArchiveFormat(resolvedVersion, platform)
+        format
     };
+};
+const getCliPath = (extractedPath, archiveFormat) => {
+    return archiveFormat === 'apk' ? `${extractedPath}/usr/bin` : extractedPath;
 };
 const determineInstalledVersion = async () => {
     const { stdout } = await doExec('supabase --version');
@@ -32599,9 +32627,10 @@ async function run() {
         const download = await getDownloadArchive(version);
         const pathToArchive = await toolCacheExports.downloadTool(download.url);
         // Extract the tarball/zipball onto host runner
-        const pathToCLI = download.format === 'zip'
+        const extractedPath = download.format === 'zip'
             ? await toolCacheExports.extractZip(pathToArchive)
             : await toolCacheExports.extractTar(pathToArchive);
+        const pathToCLI = getCliPath(extractedPath, download.format);
         // Expose the tool by adding it to the PATH
         coreExports.addPath(pathToCLI);
         // Expose installed tool version

@@ -1,4 +1,5 @@
 import { exec } from 'child_process'
+import { existsSync } from 'fs'
 import os from 'os'
 import { gte, lt } from 'semver'
 import { promisify } from 'util'
@@ -8,7 +9,7 @@ const VERSIONED_ARCHIVE_VERSION = '2.99.0'
 const LATEST_RELEASE_URL =
   'https://api.github.com/repos/supabase/cli/releases/latest'
 
-export type ArchiveFormat = 'tar' | 'zip'
+export type ArchiveFormat = 'apk' | 'tar' | 'zip'
 
 export type DownloadArchive = {
   url: string
@@ -53,7 +54,37 @@ const resolveLatestVersion = async (): Promise<string> => {
   return normalizeVersion(release.tag_name)
 }
 
-const getArchiveFormat = (version: string, platform: string): ArchiveFormat => {
+const detectMuslLinux = async (platform = os.platform()): Promise<boolean> => {
+  if (platform !== 'linux') {
+    return false
+  }
+
+  if (existsSync('/etc/alpine-release')) {
+    return true
+  }
+
+  try {
+    const { stdout, stderr } = await doExec('ldd --version')
+    return `${stdout}\n${stderr}`.toLowerCase().includes('musl')
+  } catch (error) {
+    const output = error instanceof Error ? error.message : String(error)
+    return output.toLowerCase().includes('musl')
+  }
+}
+
+const getArchiveFormat = (
+  version: string,
+  platform: string,
+  isMuslLinux: boolean
+): ArchiveFormat => {
+  if (
+    platform === 'linux' &&
+    isMuslLinux &&
+    gte(version, VERSIONED_ARCHIVE_VERSION)
+  ) {
+    return 'apk'
+  }
+
   if (platform === 'win32' && gte(version, VERSIONED_ARCHIVE_VERSION)) {
     return 'zip'
   }
@@ -64,12 +95,17 @@ const getArchiveFormat = (version: string, platform: string): ArchiveFormat => {
 const getArchiveFilename = (
   version: string,
   platform: string,
-  arch: string
+  arch: string,
+  format: ArchiveFormat
 ): string => {
   const archivePlatform = mapOS(platform)
   const archiveArch = mapArch(arch)
   if (lt(version, '1.28.0')) {
     return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`
+  }
+
+  if (platform === 'linux' && format === 'apk') {
+    return `supabase_${version}_${archivePlatform}_${archiveArch}.apk`
   }
 
   if (gte(version, VERSIONED_ARCHIVE_VERSION)) {
@@ -83,18 +119,31 @@ const getArchiveFilename = (
 export const getDownloadArchive = async (
   version: string,
   platform = os.platform(),
-  arch = os.arch()
+  arch = os.arch(),
+  isMuslLinux?: boolean
 ): Promise<DownloadArchive> => {
   const resolvedVersion =
     version.toLowerCase() === 'latest'
       ? await resolveLatestVersion()
       : normalizeVersion(version)
-  const filename = getArchiveFilename(resolvedVersion, platform, arch)
+  const format = getArchiveFormat(
+    resolvedVersion,
+    platform,
+    isMuslLinux ?? (await detectMuslLinux(platform))
+  )
+  const filename = getArchiveFilename(resolvedVersion, platform, arch, format)
 
   return {
     url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
-    format: getArchiveFormat(resolvedVersion, platform)
+    format
   }
+}
+
+export const getCliPath = (
+  extractedPath: string,
+  archiveFormat: ArchiveFormat
+): string => {
+  return archiveFormat === 'apk' ? `${extractedPath}/usr/bin` : extractedPath
 }
 
 export const getDownloadUrl = async (version: string): Promise<string> => {
