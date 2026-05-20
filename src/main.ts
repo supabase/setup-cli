@@ -10,6 +10,7 @@ const REGISTRY_VERSION = "1.28.0";
 const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
+const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
 
 type ArchiveFormat = "tar" | "zip";
 
@@ -175,7 +176,17 @@ function resolveVersion(inputVersion: string): string {
 }
 
 async function resolveLatestVersion(): Promise<string> {
-  const response = await fetch(GITHUB_RELEASES_API);
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const githubToken = process.env[GITHUB_TOKEN_ENV]?.trim();
+
+  if (githubToken) {
+    headers.Authorization = `Bearer ${githubToken}`;
+  }
+
+  const response = await fetch(GITHUB_RELEASES_API, { headers });
   if (!response.ok) {
     throw new Error(`Failed to resolve latest Supabase CLI release: ${response.statusText}`);
   }

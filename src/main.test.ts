@@ -10,13 +10,21 @@ import * as tc from "@actions/tool-cache";
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const defaultEntrypoint = fileURLToPath(new URL("./main.ts", import.meta.url));
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
+const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
+const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
 const originalWorkspace = process.env.GITHUB_WORKSPACE;
+const originalGithubToken = process.env[GITHUB_TOKEN_ENV];
 const tempDirs = new Set<string>();
 let mainModule: typeof import("./main.ts") | null = null;
 
 afterEach(() => {
   mock.restore();
   process.env.GITHUB_WORKSPACE = originalWorkspace;
+  if (originalGithubToken === undefined) {
+    delete process.env[GITHUB_TOKEN_ENV];
+  } else {
+    process.env[GITHUB_TOKEN_ENV] = originalGithubToken;
+  }
 
   for (const dir of tempDirs) {
     rmSync(dir, { force: true, recursive: true });
@@ -219,6 +227,22 @@ test("resolves latest before choosing a versioned Supabase CLI archive", async (
   expect(archive).toEqual({
     url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_darwin_arm64.tar.gz",
     format: "tar",
+  });
+});
+
+test("authenticates latest release lookup when a GitHub token is provided", async () => {
+  process.env[GITHUB_TOKEN_ENV] = "ghs_test-token";
+  const fetch = mockLatestRelease("v2.99.0");
+  const { getDownloadArchive } = await getMainModule();
+
+  await getDownloadArchive("latest", "darwin", "arm64");
+
+  expect(fetch).toHaveBeenCalledWith(GITHUB_RELEASES_API, {
+    headers: expect.objectContaining({
+      Accept: "application/vnd.github+json",
+      Authorization: "Bearer ghs_test-token",
+      "X-GitHub-Api-Version": "2022-11-28",
+    }),
   });
 });
 

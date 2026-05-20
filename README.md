@@ -47,6 +47,7 @@ steps:
   - uses: supabase/setup-cli@v2
     with:
       version: latest
+      github-token: ${{ github.token }}
   - run: supabase init
   - run: supabase db start
 ```
@@ -58,9 +59,10 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                        | Default                           | Required |
-| --------- | ------ | ---------------------------------- | --------------------------------- | -------- |
-| `version` | String | Supabase CLI version (or `latest`) | Root lockfile version or `latest` | false    |
+| Name           | Type   | Description                                                                | Default                           | Required |
+| -------------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `version`      | String | Supabase CLI version (or `latest`)                                         | Root lockfile version or `latest` | false    |
+| `github-token` | String | GitHub token used to resolve `latest` without unauthenticated API limiting |                                   | false    |
 
 ## Advanced Usage
 
@@ -162,6 +164,7 @@ steps:
   - uses: ./
     with:
       version: latest
+      github-token: ${{ github.token }}
 ```
 
 The CI workflow provides fast smoke coverage across GitHub-hosted runners, and
