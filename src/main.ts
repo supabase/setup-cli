@@ -10,8 +10,9 @@ const REGISTRY_VERSION = "1.28.0";
 const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
+const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
 
-type ArchiveFormat = "tar" | "zip";
+type ArchiveFormat = "apk" | "tar" | "zip";
 
 type DownloadArchive = {
   url: string;
@@ -175,7 +176,17 @@ function resolveVersion(inputVersion: string): string {
 }
 
 async function resolveLatestVersion(): Promise<string> {
-  const response = await fetch(GITHUB_RELEASES_API);
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const githubToken = process.env[GITHUB_TOKEN_ENV]?.trim();
+
+  if (githubToken) {
+    headers.Authorization = `Bearer ${githubToken}`;
+  }
+
+  const response = await fetch(GITHUB_RELEASES_API, { headers });
   if (!response.ok) {
     throw new Error(`Failed to resolve latest Supabase CLI release: ${response.statusText}`);
   }
@@ -188,7 +199,19 @@ async function resolveLatestVersion(): Promise<string> {
   return normalizeVersion(release.tag_name);
 }
 
-function getArchiveFormat(version: string, platform: NodeJS.Platform): ArchiveFormat {
+function getArchiveFormat(
+  version: string,
+  platform: NodeJS.Platform,
+  isMuslLinux: boolean,
+): ArchiveFormat {
+  if (
+    platform === "linux" &&
+    isMuslLinux &&
+    semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0
+  ) {
+    return "apk";
+  }
+
   if (platform === "win32" && semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0) {
     return "zip";
   }
@@ -200,12 +223,17 @@ function getArchiveFilename(
   version: string,
   platform: NodeJS.Platform,
   arch: NodeJS.Architecture,
+  archiveFormat: ArchiveFormat,
 ): string {
   const archivePlatform = getArchivePlatform(platform);
   const archiveArch = getArchiveArch(arch);
 
   if (semver.order(version, REGISTRY_VERSION) === -1) {
     return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`;
+  }
+
+  if (platform === "linux" && archiveFormat === "apk") {
+    return `supabase_${version}_${archivePlatform}_${archiveArch}.apk`;
   }
 
   if (semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0) {
@@ -220,15 +248,43 @@ export async function getDownloadArchive(
   version: string,
   platform = process.platform,
   arch = process.arch,
+  isMuslLinux?: boolean,
 ): Promise<DownloadArchive> {
   const resolvedVersion =
     version.toLowerCase() === "latest" ? await resolveLatestVersion() : normalizeVersion(version);
-  const filename = getArchiveFilename(resolvedVersion, platform, arch);
+  const format = getArchiveFormat(
+    resolvedVersion,
+    platform,
+    isMuslLinux ?? (await detectMuslLinux(platform)),
+  );
+  const filename = getArchiveFilename(resolvedVersion, platform, arch, format);
 
   return {
     url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
-    format: getArchiveFormat(resolvedVersion, platform),
+    format,
   };
+}
+
+async function detectMuslLinux(platform = process.platform): Promise<boolean> {
+  if (platform !== "linux") {
+    return false;
+  }
+
+  if (existsSync("/etc/alpine-release")) {
+    return true;
+  }
+
+  try {
+    const output = await $`ldd --version`.quiet().text();
+    return output.toLowerCase().includes("musl");
+  } catch (error) {
+    const output = error instanceof Error ? error.message : String(error);
+    return output.toLowerCase().includes("musl");
+  }
+}
+
+export function getCliPath(extractedPath: string, archiveFormat: ArchiveFormat): string {
+  return archiveFormat === "apk" ? path.join(extractedPath, "usr", "bin") : extractedPath;
 }
 
 function getCliExecutablePath(cliPath: string): string {
@@ -263,10 +319,11 @@ export async function run(): Promise<void> {
     const version = resolveVersion(core.getInput("version"));
     const archive = await getDownloadArchive(version);
     const archivePath = await tc.downloadTool(archive.url);
-    const cliPath =
+    const extractedPath =
       archive.format === "zip"
         ? await tc.extractZip(archivePath)
         : await tc.extractTar(archivePath);
+    const cliPath = getCliPath(extractedPath, archive.format);
     const installedVersion = await determineInstalledVersion(cliPath);
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
