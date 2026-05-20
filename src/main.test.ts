@@ -188,6 +188,36 @@ test("uses versioned tar archives for Supabase CLI v2.99.0 and later", async () 
   });
 });
 
+test("uses apk archives for Supabase CLI v2.99.0 and later on Linux musl", async () => {
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("2.100.1", "linux", "x64", true);
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.100.1/supabase_2.100.1_linux_amd64.apk",
+    format: "apk",
+  });
+});
+
+test("keeps tar archives before Supabase CLI v2.99.0 on Linux musl", async () => {
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("2.98.2", "linux", "x64", true);
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.98.2/supabase_linux_amd64.tar.gz",
+    format: "tar",
+  });
+});
+
+test("uses usr/bin as the CLI path for apk archives", async () => {
+  const { getCliPath } = await getMainModule();
+
+  expect(getCliPath("/tmp/extracted", "apk")).toBe(path.join("/tmp/extracted", "usr", "bin"));
+  expect(getCliPath("/tmp/extracted", "tar")).toBe("/tmp/extracted");
+  expect(getCliPath("/tmp/extracted", "zip")).toBe("/tmp/extracted");
+});
+
 test("keeps the unversioned tar archive layout before Supabase CLI v2.99.0", async () => {
   const { getDownloadArchive } = await getMainModule();
 
