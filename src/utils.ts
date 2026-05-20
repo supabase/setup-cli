@@ -36,8 +36,18 @@ const mapOS = (platform: string): string => {
 
 const normalizeVersion = (version: string): string => version.replace(/^v/i, '')
 
-const resolveLatestVersion = async (): Promise<string> => {
-  const response = await fetch(LATEST_RELEASE_URL)
+const resolveLatestVersion = async (githubToken?: string): Promise<string> => {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  }
+  const token = githubToken?.trim()
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(LATEST_RELEASE_URL, { headers })
   if (!response.ok) {
     throw new Error(
       `Failed to resolve latest Supabase CLI release: ${response.statusText}`
@@ -120,11 +130,12 @@ export const getDownloadArchive = async (
   version: string,
   platform = os.platform(),
   arch = os.arch(),
-  isMuslLinux?: boolean
+  isMuslLinux?: boolean,
+  githubToken?: string
 ): Promise<DownloadArchive> => {
   const resolvedVersion =
     version.toLowerCase() === 'latest'
-      ? await resolveLatestVersion()
+      ? await resolveLatestVersion(githubToken)
       : normalizeVersion(version)
   const format = getArchiveFormat(
     resolvedVersion,
@@ -146,8 +157,17 @@ export const getCliPath = (
   return archiveFormat === 'apk' ? `${extractedPath}/usr/bin` : extractedPath
 }
 
-export const getDownloadUrl = async (version: string): Promise<string> => {
-  const archive = await getDownloadArchive(version)
+export const getDownloadUrl = async (
+  version: string,
+  githubToken?: string
+): Promise<string> => {
+  const archive = await getDownloadArchive(
+    version,
+    os.platform(),
+    os.arch(),
+    undefined,
+    githubToken
+  )
   return archive.url
 }
 

@@ -47,6 +47,48 @@ test('gets download url to latest version', async () => {
   expect(url).toMatch(/\.tar\.gz$|\.zip$/)
 })
 
+test('authenticates latest version lookup when a GitHub token is provided', async () => {
+  const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(JSON.stringify({ tag_name: 'v2.99.0' }), {
+      status: 200,
+      statusText: 'OK'
+    })
+  )
+
+  await getDownloadUrl('latest', 'github-token')
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    'https://api.github.com/repos/supabase/cli/releases/latest',
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        Accept: 'application/vnd.github+json',
+        Authorization: 'Bearer github-token',
+        'X-GitHub-Api-Version': '2022-11-28'
+      })
+    })
+  )
+})
+
+test('omits authorization from latest version lookup without a GitHub token', async () => {
+  const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(JSON.stringify({ tag_name: 'v2.99.0' }), {
+      status: 200,
+      statusText: 'OK'
+    })
+  )
+
+  await getDownloadUrl('latest')
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    'https://api.github.com/repos/supabase/cli/releases/latest',
+    expect.objectContaining({
+      headers: expect.not.objectContaining({
+        Authorization: expect.any(String)
+      })
+    })
+  )
+})
+
 test('gets versioned archive url to binary from Supabase CLI v2.99.0', async () => {
   const archive = await getDownloadArchive('2.99.0', 'linux', 'x64')
 

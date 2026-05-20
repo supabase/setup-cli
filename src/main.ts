@@ -18,9 +18,16 @@ export async function run(): Promise<void> {
   try {
     // Get version of tool to be installed
     const version = core.getInput('version')
+    const githubToken = core.getInput('github-token')
 
     // Download the specific version of the tool, e.g. as a tarball/zipball
-    const download = await getDownloadArchive(version)
+    const download = await getDownloadArchive(
+      version,
+      undefined,
+      undefined,
+      undefined,
+      githubToken
+    )
     const pathToArchive = await tc.downloadTool(download.url)
 
     // Extract the tarball/zipball onto host runner
