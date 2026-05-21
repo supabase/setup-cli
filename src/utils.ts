@@ -157,6 +157,37 @@ export const getCliPath = (
   return archiveFormat === 'apk' ? `${extractedPath}/usr/bin` : extractedPath
 }
 
+export const installAlpineRuntimeDependencies = async (
+  archiveFormat: ArchiveFormat
+): Promise<void> => {
+  if (archiveFormat !== 'apk') {
+    return
+  }
+
+  try {
+    await doExec('command -v apk')
+  } catch {
+    throw new Error(
+      'Linux musl containers need libstdc++ and libgcc to run Supabase CLI. Install them before supabase/setup-cli.'
+    )
+  }
+
+  try {
+    await doExec('apk info -e libstdc++ libgcc')
+    return
+  } catch {
+    const { stdout } = await doExec('id -u')
+    if (stdout.trim() !== '0') {
+      throw new Error(
+        "Alpine/musl containers need libstdc++ and libgcc to run Supabase CLI. Add 'apk add --no-cache libstdc++ libgcc' before supabase/setup-cli, or run this job container as root."
+      )
+    }
+  }
+
+  // The Supabase CLI shim in the apk dynamically links these Alpine runtime libraries.
+  await doExec('apk add --no-cache libstdc++ libgcc')
+}
+
 export const getDownloadUrl = async (
   version: string,
   githubToken?: string
