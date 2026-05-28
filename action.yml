@@ -6,7 +6,7 @@ inputs:
     description: Version of Supabase CLI to install. If omitted, detect from the root lockfile and otherwise use latest.
     required: false
   github-token:
-    description: GitHub token used to resolve the latest Supabase CLI release without hitting unauthenticated API limits.
+    description: Deprecated. The action now installs through npm and does not use GitHub release API requests.
     required: false
 outputs:
   version:
@@ -112,5 +112,4 @@ runs:
       working-directory: ${{ github.action_path }}
       env:
         INPUT_VERSION: ${{ inputs.version }}
-        SUPABASE_CLI_GITHUB_TOKEN: ${{ inputs.github-token }}
       run: bun src/main.ts

@@ -28,8 +28,10 @@ steps:
 ```
 
 If `version` is omitted, the action checks the repository root for `bun.lock`,
-`pnpm-lock.yaml`, or `package-lock.json` and uses the declared `supabase`
-version. If no supported lockfile is present, it falls back to `latest`.
+`pnpm-lock.yaml`, or `package-lock.json` and installs the declared `supabase`
+package version through npm. If the lockfile includes package integrity
+metadata, the action verifies it against the npm registry before installing. If
+no supported lockfile is present, it falls back to `latest`.
 
 A specific version of the `supabase` CLI can be installed:
 
@@ -47,7 +49,6 @@ steps:
   - uses: supabase/setup-cli@v2
     with:
       version: latest
-      github-token: ${{ github.token }}
   - run: supabase init
   - run: supabase db start
 ```
@@ -59,10 +60,10 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name           | Type   | Description                                                                | Default                           | Required |
-| -------------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
-| `version`      | String | Supabase CLI version (or `latest`)                                         | Root lockfile version or `latest` | false    |
-| `github-token` | String | GitHub token used to resolve `latest` without unauthenticated API limiting |                                   | false    |
+| Name           | Type   | Description                                                      | Default                           | Required |
+| -------------- | ------ | ---------------------------------------------------------------- | --------------------------------- | -------- |
+| `version`      | String | Supabase CLI version (or `latest`)                               | Root lockfile version or `latest` | false    |
+| `github-token` | String | Deprecated; no longer used now that installs resolve through npm |                                   | false    |
 
 ## Advanced Usage
 
