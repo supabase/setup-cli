@@ -31,6 +31,11 @@ If `version` is omitted, the action checks the repository root for `bun.lock`,
 `pnpm-lock.yaml`, or `package-lock.json` and uses the declared `supabase`
 version. If no supported lockfile is present, it falls back to `latest`.
 
+When the action resolves `latest`, it queries the GitHub releases API. In CI,
+pass `github-token: ${{ github.token }}` to avoid unauthenticated API rate
+limits. Pinning `version` to a specific Supabase CLI release avoids that lookup
+entirely.
+
 A specific version of the `supabase` CLI can be installed:
 
 ```yaml
