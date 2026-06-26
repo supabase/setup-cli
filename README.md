@@ -40,6 +40,17 @@ steps:
       version: 2.84.2
 ```
 
+To always track the latest beta prerelease, set `version` to `beta`. This is
+useful for surfacing (and fixing) breakages early:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v2
+    with:
+      version: beta
+      github-token: ${{ github.token }}
+```
+
 Run `supabase db start` to execute all migrations on a fresh database:
 
 ```yaml
@@ -59,10 +70,10 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name           | Type   | Description                                                                | Default                           | Required |
-| -------------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
-| `version`      | String | Supabase CLI version (or `latest`)                                         | Root lockfile version or `latest` | false    |
-| `github-token` | String | GitHub token used to resolve `latest` without unauthenticated API limiting |                                   | false    |
+| Name           | Type   | Description                                                                       | Default                           | Required |
+| -------------- | ------ | --------------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `version`      | String | Supabase CLI version (or `latest`, or `beta` for the latest beta release)         | Root lockfile version or `latest` | false    |
+| `github-token` | String | GitHub token used to resolve `latest`/`beta` without unauthenticated API limiting |                                   | false    |
 
 ## Advanced Usage
 

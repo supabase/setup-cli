@@ -11,6 +11,7 @@ const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const defaultEntrypoint = fileURLToPath(new URL("./main.ts", import.meta.url));
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
+const GITHUB_RELEASES_LIST_API = "https://api.github.com/repos/supabase/cli/releases";
 const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
 const originalWorkspace = process.env.GITHUB_WORKSPACE;
 const originalGithubToken = process.env[GITHUB_TOKEN_ENV];
@@ -177,6 +178,21 @@ function mockLatestRelease(version = "v2.99.0") {
   );
 }
 
+function mockBetaReleases(
+  releases: Array<{ tag_name: string; prerelease: boolean }> = [
+    { tag_name: "v2.100.0-beta.2", prerelease: true },
+    { tag_name: "v2.100.0-beta.1", prerelease: true },
+    { tag_name: "v2.99.0", prerelease: false },
+  ],
+) {
+  return spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify(releases), {
+      status: 200,
+      statusText: "OK",
+    }),
+  );
+}
+
 async function getMainModule(): Promise<typeof import("./main.ts")> {
   if (!mainModule) {
     mainModule = await import("./main.ts");
@@ -274,6 +290,66 @@ test("authenticates latest release lookup when a GitHub token is provided", asyn
       "X-GitHub-Api-Version": "2022-11-28",
     }),
   });
+});
+
+test("resolves the latest beta prerelease for the beta channel", async () => {
+  mockBetaReleases();
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("beta", "darwin", "arm64");
+
+  expect(archive).toEqual({
+    url: "https://github.com/supabase/cli/releases/download/v2.100.0-beta.2/supabase_2.100.0-beta.2_darwin_arm64.tar.gz",
+    format: "tar",
+  });
+});
+
+test("treats the beta channel case-insensitively and skips stable releases", async () => {
+  mockBetaReleases([
+    { tag_name: "v2.99.0", prerelease: false },
+    { tag_name: "v2.100.0-beta.5", prerelease: true },
+  ]);
+  const { getDownloadArchive } = await getMainModule();
+
+  const archive = await getDownloadArchive("BETA", "linux", "x64");
+
+  expect(archive.url).toContain("/download/v2.100.0-beta.5/supabase_2.100.0-beta.5_linux_amd64");
+});
+
+test("fails when no beta prerelease is available", async () => {
+  mockBetaReleases([{ tag_name: "v2.99.0", prerelease: false }]);
+  const { getDownloadArchive } = await getMainModule();
+
+  expect(getDownloadArchive("beta", "linux", "x64")).rejects.toThrow(
+    "Failed to resolve latest Supabase CLI beta release: no beta release found",
+  );
+});
+
+test("queries the releases list when resolving the beta channel", async () => {
+  const fetch = mockBetaReleases();
+  const { getDownloadArchive } = await getMainModule();
+
+  await getDownloadArchive("beta", "darwin", "arm64");
+
+  expect(fetch).toHaveBeenCalledWith(GITHUB_RELEASES_LIST_API, {
+    headers: expect.objectContaining({
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    }),
+  });
+});
+
+test("exports the internal registry when installing the beta channel", async () => {
+  mockBetaReleases();
+  const cliDir = createFakeCli("supabase 2.100.0-beta.2");
+  const spies = createActionSpies("beta", cliDir, "/download/v2.100.0-beta.2/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.100.0-beta.2");
+  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
+  expect(spies.setFailed).not.toHaveBeenCalled();
 });
 
 test("awaits the action entrypoint with omitted version and latest fallback", async () => {

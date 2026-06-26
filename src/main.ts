@@ -9,7 +9,10 @@ export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
 const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
+const LATEST_VERSION = "latest";
+const BETA_VERSION = "beta";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
+const GITHUB_RELEASES_LIST_API = "https://api.github.com/repos/supabase/cli/releases";
 const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
 
 type ArchiveFormat = "apk" | "tar" | "zip";
@@ -175,7 +178,7 @@ function resolveVersion(inputVersion: string): string {
   );
 }
 
-async function resolveLatestVersion(): Promise<string> {
+function buildGithubHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
@@ -186,7 +189,11 @@ async function resolveLatestVersion(): Promise<string> {
     headers.Authorization = `Bearer ${githubToken}`;
   }
 
-  const response = await fetch(GITHUB_RELEASES_API, { headers });
+  return headers;
+}
+
+async function resolveLatestVersion(): Promise<string> {
+  const response = await fetch(GITHUB_RELEASES_API, { headers: buildGithubHeaders() });
   if (!response.ok) {
     throw new Error(`Failed to resolve latest Supabase CLI release: ${response.statusText}`);
   }
@@ -197,6 +204,31 @@ async function resolveLatestVersion(): Promise<string> {
   }
 
   return normalizeVersion(release.tag_name);
+}
+
+async function resolveLatestBetaVersion(): Promise<string> {
+  // The /releases/latest endpoint never returns prereleases, so list all
+  // releases (sorted newest-first) and pick the most recent beta prerelease.
+  const response = await fetch(GITHUB_RELEASES_LIST_API, { headers: buildGithubHeaders() });
+  if (!response.ok) {
+    throw new Error(`Failed to resolve latest Supabase CLI beta release: ${response.statusText}`);
+  }
+
+  const releases = (await response.json()) as Array<{ tag_name?: unknown; prerelease?: unknown }>;
+  const beta = Array.isArray(releases)
+    ? releases.find(
+        (release) =>
+          release.prerelease === true &&
+          typeof release.tag_name === "string" &&
+          /-beta/i.test(release.tag_name),
+      )
+    : undefined;
+
+  if (!beta || typeof beta.tag_name !== "string") {
+    throw new Error("Failed to resolve latest Supabase CLI beta release: no beta release found");
+  }
+
+  return normalizeVersion(beta.tag_name);
 }
 
 function getArchiveFormat(
@@ -250,8 +282,15 @@ export async function getDownloadArchive(
   arch = process.arch,
   isMuslLinux?: boolean,
 ): Promise<DownloadArchive> {
-  const resolvedVersion =
-    version.toLowerCase() === "latest" ? await resolveLatestVersion() : normalizeVersion(version);
+  const channel = version.toLowerCase();
+  let resolvedVersion: string;
+  if (channel === LATEST_VERSION) {
+    resolvedVersion = await resolveLatestVersion();
+  } else if (channel === BETA_VERSION) {
+    resolvedVersion = await resolveLatestBetaVersion();
+  } else {
+    resolvedVersion = normalizeVersion(version);
+  }
   const format = getArchiveFormat(
     resolvedVersion,
     platform,
@@ -328,7 +367,12 @@ export async function run(): Promise<void> {
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (version.toLowerCase() === "latest" || semver.order(version, REGISTRY_VERSION) >= 0) {
+    const channel = version.toLowerCase();
+    if (
+      channel === LATEST_VERSION ||
+      channel === BETA_VERSION ||
+      semver.order(version, REGISTRY_VERSION) >= 0
+    ) {
       core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
     }
   } catch (error) {
