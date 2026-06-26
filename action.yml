@@ -3,10 +3,7 @@ description: Setup Supabase CLI, supabase, on GitHub Actions runners
 author: Supabase
 inputs:
   version:
-    description: Version of Supabase CLI to install. If omitted, detect from the root lockfile and otherwise use latest.
-    required: false
-  github-token:
-    description: GitHub token used to resolve the latest Supabase CLI release without hitting unauthenticated API limits.
+    description: Supabase CLI version to install. Supports latest, beta, or a fixed version published to npm. If omitted, detect from the root lockfile and otherwise use latest.
     required: false
 outputs:
   version:
@@ -22,17 +19,18 @@ runs:
       run: |
         set -eu
 
-        if [ "${RUNNER_OS}" != "Linux" ]; then
-          exit 0
+        is_musl=false
+
+        if [ "${RUNNER_OS}" = "Linux" ]; then
+          # setup-bun does not detect Linux musl yet, so Alpine-like containers need the musl asset explicitly.
+          if [ -f /etc/alpine-release ]; then
+            is_musl=true
+          elif command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+            is_musl=true
+          fi
         fi
 
-        # setup-bun does not detect Linux musl yet, so Alpine-like containers need the musl asset explicitly.
-        is_musl=false
-        if [ -f /etc/alpine-release ]; then
-          is_musl=true
-        elif command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
-          is_musl=true
-        fi
+        echo "is-musl=${is_musl}" >> "$GITHUB_OUTPUT"
 
         if [ "${is_musl}" != "true" ]; then
           exit 0
@@ -55,25 +53,15 @@ runs:
       run: |
         set -eu
 
-        if [ "${RUNNER_OS}" != "Linux" ]; then
+        if [ "${{ steps.bun-download.outputs.is-musl }}" != "true" ]; then
           exit 0
         fi
 
-        is_musl=false
-        if [ -f /etc/alpine-release ]; then
-          is_musl=true
-        elif command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
-          is_musl=true
-        fi
-
-        if [ "${is_musl}" != "true" ]; then
-          exit 0
-        fi
-
-        # Bun's musl binary and the Supabase CLI shim both dynamically link libstdc++ and libgcc.
+        # Alpine/musl containers need runtime packages for Bun and the npm CLI shim.
+        # actions/setup-node uses glibc Node builds, so install Alpine's Node/npm instead.
         if command -v apk >/dev/null 2>&1; then
           missing_packages=""
-          for package in libstdc++ libgcc; do
+          for package in libstdc++ libgcc nodejs npm; do
             if ! apk info -e "${package}" >/dev/null 2>&1; then
               missing_packages="${missing_packages} ${package}"
             fi
@@ -92,8 +80,62 @@ runs:
           exit 0
         fi
 
-        echo "::error::Linux musl containers need libstdc++ and libgcc to run Supabase CLI. Install them before supabase/setup-cli."
+        echo "::error::Linux musl containers need libstdc++, libgcc, nodejs, and npm to run Supabase CLI. Install them before supabase/setup-cli."
         exit 1
+
+    - id: node-runtime
+      name: Resolve Node Runtime
+      shell: sh
+      run: |
+        set -eu
+
+        node_version=""
+        node_major=""
+        has_npm=false
+
+        if command -v node >/dev/null 2>&1; then
+          node_version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+          node_major="${node_version%%.*}"
+        fi
+
+        if command -v npm >/dev/null 2>&1; then
+          has_npm=true
+        fi
+
+        if [ -n "${node_version}" ] && [ "${has_npm}" = "true" ]; then
+          case "${node_major}" in
+            ''|*[!0-9]*)
+              echo "::error::Could not determine Node.js version from '${node_version}'. Supabase CLI npm installs require Node.js 20 or newer."
+              exit 1
+              ;;
+          esac
+
+          if [ "${node_major}" -lt 20 ]; then
+            echo "::error::Supabase CLI npm installs require Node.js 20 or newer, but found Node.js ${node_version}. Set up Node.js 20+ before supabase/setup-cli, or use a runner image with Node.js 20+ and npm."
+            exit 1
+          fi
+
+          echo "setup-node=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "${{ steps.bun-download.outputs.is-musl }}" = "true" ]; then
+          echo "::error::Linux musl containers need Node.js 20 or newer and npm from musl-compatible packages. Install libstdc++, libgcc, nodejs, and npm before supabase/setup-cli, or run this job container as root so the action can install them."
+          exit 1
+        fi
+
+        if [ -n "${node_version}" ] || [ "${has_npm}" = "true" ]; then
+          echo "::error::Supabase CLI npm installs need both Node.js 20+ and npm. Found Node.js '${node_version:-missing}' and npm '${has_npm}'. Configure both before supabase/setup-cli."
+          exit 1
+        fi
+
+        echo "setup-node=true" >> "$GITHUB_OUTPUT"
+
+    - name: Setup Node
+      if: ${{ steps.node-runtime.outputs.setup-node == 'true' }}
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      with:
+        node-version: 24
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -112,5 +154,4 @@ runs:
       working-directory: ${{ github.action_path }}
       env:
         INPUT_VERSION: ${{ inputs.version }}
-        SUPABASE_CLI_GITHUB_TOKEN: ${{ inputs.github-token }}
       run: bun src/main.ts

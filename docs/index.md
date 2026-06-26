@@ -7,7 +7,12 @@ The action supports `ubuntu-latest`, `windows-latest`, and `macos-latest`, and
 adds the requested `supabase` version to `PATH` for the rest of the job.
 
 If `version` is omitted, the action checks the repository root for `bun.lock`,
-`pnpm-lock.yaml`, or `package-lock.json` and otherwise falls back to `latest`.
+`pnpm-lock.yaml`, or `package-lock.json` and otherwise falls back to npm
+`latest`.
+
+The action uses an existing Node.js/npm runtime when one is already available,
+and requires Node.js 20 or newer. On non-musl runners without Node.js or npm, it
+provisions them internally. Runners only need network access to the npm registry.
 
 ## Quick Start
 
@@ -24,17 +29,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
       - run: supabase init
       - run: supabase db start
 ```
 
-To pin a specific CLI version:
+To pin a fixed npm-published CLI version:
 
 ```yaml
-- uses: supabase/setup-cli@v2
+- uses: supabase/setup-cli@v3
   with:
     version: 2.84.2
+```
+
+To test the current beta release:
+
+```yaml
+- uses: supabase/setup-cli@v3
+  with:
+    version: beta
 ```
 
 ## Resources

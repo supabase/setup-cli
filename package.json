@@ -1,6 +1,6 @@
 {
   "name": "setup-cli",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Supabase CLI GitHub Action",
   "keywords": [
@@ -24,8 +24,7 @@
     "typecheck": "bun x tsgo -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@actions/core": "^3.0.1",
-    "@actions/tool-cache": "^4.0.0"
+    "@actions/core": "^3.0.1"
   },
   "devDependencies": {
     "@tsconfig/bun": "^1.0.10",

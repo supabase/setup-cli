@@ -24,30 +24,58 @@ Setup the `supabase` CLI:
 
 ```yaml
 steps:
-  - uses: supabase/setup-cli@v2
+  - uses: supabase/setup-cli@v3
 ```
 
 If `version` is omitted, the action checks the repository root for `bun.lock`,
-`pnpm-lock.yaml`, or `package-lock.json` and uses the declared `supabase`
-version. If no supported lockfile is present, it falls back to `latest`.
+`pnpm-lock.yaml`, or `package-lock.json` and installs the declared `supabase`
+package version through npm. If the lockfile includes package integrity
+metadata, the action verifies it against the npm registry before installing. If
+no supported lockfile is present, it falls back to `latest`.
 
-A specific version of the `supabase` CLI can be installed:
+The action uses an existing Node.js/npm runtime when one is already available,
+and requires Node.js 20 or newer. On non-musl runners without Node.js or npm, it
+provisions them internally. Runners must be able to reach the npm registry to
+install the CLI package.
+
+When running in Alpine or other Linux musl containers, the action uses Alpine's
+`nodejs` and `npm` packages instead of `actions/setup-node`, because the
+standard Node.js runner binaries target glibc. Root containers can have missing
+runtime packages installed automatically. Non-root containers must include
+Node.js 20+ and the runtime packages in the image before the action runs:
+
+```dockerfile
+FROM alpine:3.20
+
+RUN apk add --no-cache libstdc++ libgcc nodejs npm
+
+USER 1000:1000
+```
+
+A fixed npm-published version, `latest`, or `beta` of the `supabase` CLI can be
+installed:
 
 ```yaml
 steps:
-  - uses: supabase/setup-cli@v2
+  - uses: supabase/setup-cli@v3
     with:
       version: 2.84.2
+```
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: beta
 ```
 
 Run `supabase db start` to execute all migrations on a fresh database:
 
 ```yaml
 steps:
-  - uses: supabase/setup-cli@v2
+  - uses: supabase/setup-cli@v3
     with:
       version: latest
-      github-token: ${{ github.token }}
   - run: supabase init
   - run: supabase db start
 ```
@@ -59,10 +87,9 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name           | Type   | Description                                                                | Default                           | Required |
-| -------------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
-| `version`      | String | Supabase CLI version (or `latest`)                                         | Root lockfile version or `latest` | false    |
-| `github-token` | String | GitHub token used to resolve `latest` without unauthenticated API limiting |                                   | false    |
+| Name      | Type   | Description                                                      | Default                           | Required |
+| --------- | ------ | ---------------------------------------------------------------- | --------------------------------- | -------- |
+| `version` | String | Supabase CLI `latest`, `beta`, or fixed version published to npm | Root lockfile version or `latest` | false    |
 
 ## Advanced Usage
 
@@ -70,7 +97,7 @@ Check generated TypeScript types are up-to-date with Postgres schema:
 
 ```yaml
 steps:
-  - uses: supabase/setup-cli@v2
+  - uses: supabase/setup-cli@v3
   - run: supabase init
   - run: supabase db start
   - name: Verify generated types match Postgres schema
@@ -93,7 +120,7 @@ env:
   PROJECT_ID: <project-id>
 
 steps:
-  - uses: supabase/setup-cli@v2
+  - uses: supabase/setup-cli@v3
   - run: supabase link --project-ref $PROJECT_ID
   - run: supabase db push
 ```
@@ -102,7 +129,7 @@ Export local Supabase env vars for app tests:
 
 ```yaml
 steps:
-  - uses: supabase/setup-cli@v2
+  - uses: supabase/setup-cli@v3
   - run: supabase init
   - run: supabase start
   - name: Export local Supabase env vars
@@ -147,7 +174,7 @@ need to perform a few setup steps before you can work on the action.
 ## Publish
 
 1. Create a new GitHub release
-2. Rebase `v2` branch on `main`
+2. Rebase `v3` branch on `main`
 
 Your action is now published! :rocket:
 
@@ -164,7 +191,6 @@ steps:
   - uses: ./
     with:
       version: latest
-      github-token: ${{ github.token }}
 ```
 
 The CI workflow provides fast smoke coverage across GitHub-hosted runners, and

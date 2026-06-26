@@ -1,30 +1,29 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
-import * as tc from "@actions/tool-cache";
 
-const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const defaultEntrypoint = fileURLToPath(new URL("./main.ts", import.meta.url));
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
-const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
-const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
+const originalPath = process.env.PATH;
+const originalRunnerTemp = process.env.RUNNER_TEMP;
 const originalWorkspace = process.env.GITHUB_WORKSPACE;
-const originalGithubToken = process.env[GITHUB_TOKEN_ENV];
 const tempDirs = new Set<string>();
 let mainModule: typeof import("./main.ts") | null = null;
 
 afterEach(() => {
   mock.restore();
+  process.env.PATH = originalPath;
+  process.env.RUNNER_TEMP = originalRunnerTemp;
   process.env.GITHUB_WORKSPACE = originalWorkspace;
-  if (originalGithubToken === undefined) {
-    delete process.env[GITHUB_TOKEN_ENV];
-  } else {
-    process.env[GITHUB_TOKEN_ENV] = originalGithubToken;
-  }
+  delete process.env.FAKE_CLI_VERSION;
+  delete process.env.FAKE_NPM_BIN;
+  delete process.env.FAKE_NPM_INTEGRITY;
+  delete process.env.FAKE_NPM_LOG;
+  delete process.env.FAKE_NPM_PACKAGE_VERSION;
+  delete process.env.FAKE_NPM_SCRIPTS;
+  delete process.env.SUPABASE_SETUP_CLI_NPM;
 
   for (const dir of tempDirs) {
     rmSync(dir, { force: true, recursive: true });
@@ -32,32 +31,14 @@ afterEach(() => {
   tempDirs.clear();
 });
 
-function createFakeCli(versionOutput: string): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "setup-cli-"));
+function createTempDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
   tempDirs.add(dir);
-
-  if (process.platform === "win32") {
-    writeFileSync(
-      path.join(dir, "supabase.cmd"),
-      versionOutput ? `@echo off\r\necho ${versionOutput}\r\n` : "@echo off\r\n",
-    );
-    return dir;
-  }
-
-  const escapedOutput = versionOutput.replaceAll("'", "'\"'\"'");
-  writeFileSync(
-    path.join(dir, "supabase"),
-    versionOutput
-      ? `#!/usr/bin/env bash\nprintf '%s\\n' '${escapedOutput}'\n`
-      : "#!/usr/bin/env bash\n",
-  );
-  Bun.spawnSync(["chmod", "+x", path.join(dir, "supabase")]);
   return dir;
 }
 
 function createWorkspace(files: Record<string, string>): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "setup-cli-workspace-"));
-  tempDirs.add(dir);
+  const dir = createTempDir("setup-cli-workspace-");
 
   for (const [relativePath, content] of Object.entries(files)) {
     const filePath = path.join(dir, relativePath);
@@ -73,6 +54,7 @@ function createBunLock(
   options: {
     includeDependency?: boolean;
     includePackageEntry?: boolean;
+    integrity?: string;
     useDevDependency?: boolean;
   } = {},
 ): string {
@@ -98,7 +80,7 @@ ${
       "supabase@${version}",
       "",
       {},
-      "sha512-test"
+      "${options.integrity ?? "sha512-bun"}"
     ]`
     : ""
 }
@@ -109,7 +91,12 @@ ${
 
 function createPnpmLock(
   version: string,
-  options: { asString?: boolean; includeVersion?: boolean; useDevDependency?: boolean } = {},
+  options: {
+    asString?: boolean;
+    includeVersion?: boolean;
+    integrity?: string;
+    useDevDependency?: boolean;
+  } = {},
 ): string {
   const dependencyKey = options.useDevDependency ? "devDependencies" : "dependencies";
 
@@ -127,11 +114,11 @@ ${options.includeVersion === false ? "" : `        version: ${version}`}`
 packages:
   supabase@${version}:
     resolution:
-      integrity: sha512-test
+      integrity: ${options.integrity ?? "sha512-pnpm"}
 `;
 }
 
-function createPackageLock(version: string): string {
+function createPackageLock(version: string, integrity = "sha512-package-lock"): string {
   return JSON.stringify(
     {
       name: "app",
@@ -143,6 +130,7 @@ function createPackageLock(version: string): string {
           },
         },
         "node_modules/supabase": {
+          integrity,
           version,
         },
       },
@@ -152,29 +140,138 @@ function createPackageLock(version: string): string {
   );
 }
 
-function createActionSpies(inputVersion: string, cliDir: string, expectedUrlFragment: string) {
-  return {
-    getInput: spyOn(core, "getInput").mockReturnValue(inputVersion),
-    setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
-    addPath: spyOn(core, "addPath").mockImplementation(() => {}),
-    exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
-    setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
-    downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
-      expect(url).toContain(expectedUrlFragment);
-      return path.join(os.tmpdir(), "supabase-cli.tar.gz");
-    }),
-    extractTar: spyOn(tc, "extractTar").mockImplementation(async () => cliDir),
-    extractZip: spyOn(tc, "extractZip").mockImplementation(async () => cliDir),
-  };
-}
+function createFakeNpm(): string {
+  const root = createTempDir("setup-cli-fake-npm-");
+  const binDir = path.join(root, "bin");
+  const scriptPath = path.join(root, "fake-npm.js");
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(
+    scriptPath,
+    `import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
-function mockLatestRelease(version = "v2.99.0") {
-  return spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify({ tag_name: version }), {
-      status: 200,
-      statusText: "OK",
+const args = process.argv.slice(2);
+appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args) + "\\n");
+
+if (args[0] === "view") {
+  const bin =
+    process.env.FAKE_NPM_BIN === "missing"
+      ? undefined
+      : { supabase: process.env.FAKE_NPM_BIN ?? "dist/supabase.js" };
+  const scripts = process.env.FAKE_NPM_SCRIPTS ? JSON.parse(process.env.FAKE_NPM_SCRIPTS) : {};
+
+  console.log(
+    JSON.stringify({
+      version: process.env.FAKE_NPM_PACKAGE_VERSION ?? "2.101.0",
+      bin,
+      scripts,
+      "dist.integrity": process.env.FAKE_NPM_INTEGRITY ?? "sha512-test",
     }),
   );
+  process.exit(0);
+}
+
+if (args[0] !== "install") {
+  console.error("Unexpected npm command: " + args.join(" "));
+  process.exit(1);
+}
+
+const prefixIndex = args.indexOf("--prefix");
+const prefix = prefixIndex === -1 ? undefined : args[prefixIndex + 1];
+if (!prefix) {
+  console.error("Missing --prefix");
+  process.exit(1);
+}
+
+const binDir = path.join(prefix, "node_modules", ".bin");
+mkdirSync(binDir, { recursive: true });
+
+if (process.platform === "win32") {
+  writeFileSync(
+    path.join(binDir, "supabase.cmd"),
+    process.env.FAKE_CLI_VERSION ? "@echo off\\r\\necho " + process.env.FAKE_CLI_VERSION + "\\r\\n" : "@echo off\\r\\n",
+  );
+} else {
+  writeFileSync(
+    path.join(binDir, "supabase"),
+    process.env.FAKE_CLI_VERSION
+      ? "#!/usr/bin/env bash\\nprintf '%s\\\\n' '" + process.env.FAKE_CLI_VERSION.replaceAll("'", "'\\\\''") + "'\\n"
+      : "#!/usr/bin/env bash\\n",
+    { mode: 0o755 },
+  );
+}
+`,
+  );
+
+  if (process.platform === "win32") {
+    writeFileSync(
+      path.join(binDir, "npm.cmd"),
+      `@echo off\r\n"${process.execPath}" "${scriptPath}" %*\r\n`,
+    );
+  } else {
+    writeFileSync(
+      path.join(binDir, "npm"),
+      `#!/usr/bin/env bash\nexec "${process.execPath}" "${scriptPath}" "$@"\n`,
+      { mode: 0o755 },
+    );
+  }
+
+  return binDir;
+}
+
+function installFakeNpm(
+  versionOutput = "supabase 2.101.0",
+  options: {
+    bin?: string;
+    integrity?: string;
+    packageVersion?: string;
+    scripts?: Record<string, string>;
+  } = {},
+): string {
+  const binDir = createFakeNpm();
+  const logPath = path.join(createTempDir("setup-cli-fake-npm-log-"), "npm.log");
+  writeFileSync(logPath, "");
+  process.env.FAKE_CLI_VERSION = versionOutput;
+  process.env.FAKE_NPM_BIN = options.bin ?? "dist/supabase.js";
+  process.env.FAKE_NPM_INTEGRITY = options.integrity ?? "sha512-test";
+  process.env.FAKE_NPM_LOG = logPath;
+  process.env.FAKE_NPM_PACKAGE_VERSION =
+    options.packageVersion ??
+    versionOutput.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/)?.[0] ??
+    "2.101.0";
+  if (options.scripts) {
+    process.env.FAKE_NPM_SCRIPTS = JSON.stringify(options.scripts);
+  }
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  process.env.RUNNER_TEMP = createTempDir("setup-cli-runner-temp-");
+  process.env.SUPABASE_SETUP_CLI_NPM = path.join(
+    binDir,
+    process.platform === "win32" ? "npm.cmd" : "npm",
+  );
+
+  return logPath;
+}
+
+function readNpmCalls(logPath: string): string[][] {
+  return readFileSync(logPath, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as string[]);
+}
+
+function viewMetadataCall(spec: string): string[] {
+  return ["view", spec, "version", "bin", "scripts", "dist.integrity", "--json"];
+}
+
+function createActionSpies(inputVersion: string) {
+  return {
+    addPath: spyOn(core, "addPath").mockImplementation(() => {}),
+    exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
+    getInput: spyOn(core, "getInput").mockReturnValue(inputVersion),
+    setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
+    setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
+  };
 }
 
 async function getMainModule(): Promise<typeof import("./main.ts")> {
@@ -185,193 +282,69 @@ async function getMainModule(): Promise<typeof import("./main.ts")> {
   return mainModule;
 }
 
-test("uses versioned tar archives for Supabase CLI v2.99.0 and later", async () => {
-  const { getDownloadArchive } = await getMainModule();
+test("uses an explicit npm package version when provided", async () => {
+  const { resolvePackage } = await getMainModule();
 
-  const archive = await getDownloadArchive("2.99.0", "linux", "x64");
-
-  expect(archive).toEqual({
-    url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_linux_amd64.tar.gz",
-    format: "tar",
+  expect(resolvePackage("v2.101.0")).toEqual({
+    spec: "supabase@2.101.0",
+    version: "2.101.0",
   });
 });
 
-test("uses apk archives for Supabase CLI v2.99.0 and later on Linux musl", async () => {
-  const { getDownloadArchive } = await getMainModule();
+test("uses an explicit npm dist-tag when provided", async () => {
+  const { resolvePackage } = await getMainModule();
 
-  const archive = await getDownloadArchive("2.100.1", "linux", "x64", true);
-
-  expect(archive).toEqual({
-    url: "https://github.com/supabase/cli/releases/download/v2.100.1/supabase_2.100.1_linux_amd64.apk",
-    format: "apk",
+  expect(resolvePackage("beta")).toEqual({
+    spec: "supabase@beta",
+    version: "beta",
   });
 });
 
-test("keeps tar archives before Supabase CLI v2.99.0 on Linux musl", async () => {
-  const { getDownloadArchive } = await getMainModule();
+test("rejects unsupported npm package selectors", async () => {
+  const { resolvePackage } = await getMainModule();
 
-  const archive = await getDownloadArchive("2.98.2", "linux", "x64", true);
-
-  expect(archive).toEqual({
-    url: "https://github.com/supabase/cli/releases/download/v2.98.2/supabase_linux_amd64.tar.gz",
-    format: "tar",
-  });
+  expect(() => resolvePackage("hotfix")).toThrow(
+    'Unsupported Supabase CLI version "hotfix". Use latest, beta, or a fixed npm package version like 2.101.0.',
+  );
 });
 
-test("uses usr/bin as the CLI path for apk archives", async () => {
-  const { getCliPath } = await getMainModule();
-
-  expect(getCliPath("/tmp/extracted", "apk")).toBe(path.join("/tmp/extracted", "usr", "bin"));
-  expect(getCliPath("/tmp/extracted", "tar")).toBe("/tmp/extracted");
-  expect(getCliPath("/tmp/extracted", "zip")).toBe("/tmp/extracted");
-});
-
-test("keeps the unversioned tar archive layout before Supabase CLI v2.99.0", async () => {
-  const { getDownloadArchive } = await getMainModule();
-
-  const archive = await getDownloadArchive("2.98.2", "linux", "x64");
-
-  expect(archive).toEqual({
-    url: "https://github.com/supabase/cli/releases/download/v2.98.2/supabase_linux_amd64.tar.gz",
-    format: "tar",
-  });
-});
-
-test("uses versioned zip archives for Windows Supabase CLI v2.99.0 and later", async () => {
-  const { getDownloadArchive } = await getMainModule();
-
-  const archive = await getDownloadArchive("2.99.0", "win32", "x64");
-
-  expect(archive).toEqual({
-    url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_windows_amd64.zip",
-    format: "zip",
-  });
-});
-
-test("resolves latest before choosing a versioned Supabase CLI archive", async () => {
-  mockLatestRelease("v2.99.0");
-  const { getDownloadArchive } = await getMainModule();
-
-  const archive = await getDownloadArchive("latest", "darwin", "arm64");
-
-  expect(archive).toEqual({
-    url: "https://github.com/supabase/cli/releases/download/v2.99.0/supabase_2.99.0_darwin_arm64.tar.gz",
-    format: "tar",
-  });
-});
-
-test("authenticates latest release lookup when a GitHub token is provided", async () => {
-  process.env[GITHUB_TOKEN_ENV] = "ghs_test-token";
-  const fetch = mockLatestRelease("v2.99.0");
-  const { getDownloadArchive } = await getMainModule();
-
-  await getDownloadArchive("latest", "darwin", "arm64");
-
-  expect(fetch).toHaveBeenCalledWith(GITHUB_RELEASES_API, {
-    headers: expect.objectContaining({
-      Accept: "application/vnd.github+json",
-      Authorization: "Bearer ghs_test-token",
-      "X-GitHub-Api-Version": "2022-11-28",
-    }),
-  });
-});
-
-test("awaits the action entrypoint with omitted version and latest fallback", async () => {
-  process.env.GITHUB_WORKSPACE = repo;
-  mockLatestRelease();
-  const cliDir = createFakeCli("supabase 2.84.2");
-  let startDownload!: () => void;
-  let finishDownload!: () => void;
-  const downloadStarted = new Promise<void>((resolve) => {
-    startDownload = resolve;
-  });
-  const downloadFinished = new Promise<string>((resolve) => {
-    finishDownload = () => resolve(path.join(os.tmpdir(), "supabase-cli.tar.gz"));
-  });
-  const spies = {
-    getInput: spyOn(core, "getInput").mockReturnValue(""),
-    setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
-    addPath: spyOn(core, "addPath").mockImplementation(() => {}),
-    exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
-    setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
-    downloadTool: spyOn(tc, "downloadTool").mockImplementation(async (url: string) => {
-      expect(url).toContain("/download/v2.99.0/supabase_2.99.0_");
-      startDownload();
-      return downloadFinished;
-    }),
-    extractTar: spyOn(tc, "extractTar").mockImplementation(async () => cliDir),
-    extractZip: spyOn(tc, "extractZip").mockImplementation(async () => cliDir),
-  };
-  const originalArgv1 = process.argv[1];
-  process.argv[1] = defaultEntrypoint;
-
-  try {
-    let importSettled = false;
-    const entrypoint = import(`./main.ts?entrypoint=${Date.now()}`).finally(() => {
-      importSettled = true;
-    });
-
-    await downloadStarted;
-    await Bun.sleep(0);
-
-    expect(importSettled).toBe(false);
-
-    finishDownload();
-    await entrypoint;
-  } finally {
-    process.argv[1] = originalArgv1 ?? "";
-  }
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
-  expect(spies.addPath).toHaveBeenCalledWith(cliDir);
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
-});
-
-test("uses the root bun.lock version when version is omitted", async () => {
+test("uses the root bun.lock resolution when version is omitted", async () => {
   process.env.GITHUB_WORKSPACE = createWorkspace({
-    "bun.lock": createBunLock("2.41.0"),
+    "bun.lock": createBunLock("2.41.0", { integrity: "sha512-bun-lock" }),
   });
-  const cliDir = createFakeCli("supabase 2.41.0");
-  const spies = createActionSpies("", cliDir, "/download/v2.41.0/supabase_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.downloadTool).not.toHaveBeenCalledWith(expect.stringContaining("/latest/download/"));
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.41.0");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    integrity: "sha512-bun-lock",
+    spec: "supabase@2.41.0",
+    version: "2.41.0",
+  });
 });
 
-test("uses the root pnpm-lock.yaml version when version is omitted", async () => {
+test("uses the root pnpm-lock.yaml resolution when version is omitted", async () => {
   process.env.GITHUB_WORKSPACE = createWorkspace({
-    "pnpm-lock.yaml": createPnpmLock("2.42.0"),
+    "pnpm-lock.yaml": createPnpmLock("2.42.0", { integrity: "sha512-pnpm-lock" }),
   });
-  const cliDir = createFakeCli("supabase 2.42.0");
-  const spies = createActionSpies("", cliDir, "/download/v2.42.0/supabase_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.42.0");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    integrity: "sha512-pnpm-lock",
+    spec: "supabase@2.42.0",
+    version: "2.42.0",
+  });
 });
 
-test("uses the root package-lock.json version when version is omitted", async () => {
+test("uses the root package-lock.json resolution when version is omitted", async () => {
   process.env.GITHUB_WORKSPACE = createWorkspace({
-    "package-lock.json": createPackageLock("2.43.0"),
+    "package-lock.json": createPackageLock("2.43.0", "sha512-package-lock"),
   });
-  const cliDir = createFakeCli("supabase 2.43.0");
-  const spies = createActionSpies("", cliDir, "/download/v2.43.0/supabase_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.43.0");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    integrity: "sha512-package-lock",
+    spec: "supabase@2.43.0",
+    version: "2.43.0",
+  });
 });
 
 test("falls through malformed lockfiles and uses the next supported root lockfile", async () => {
@@ -379,60 +352,47 @@ test("falls through malformed lockfiles and uses the next supported root lockfil
     "bun.lock": "{ not valid",
     "package-lock.json": createPackageLock("2.44.0"),
   });
-  const cliDir = createFakeCli("supabase 2.44.0");
-  const spies = createActionSpies("", cliDir, "/download/v2.44.0/supabase_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.44.0");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    integrity: "sha512-package-lock",
+    spec: "supabase@2.44.0",
+    version: "2.44.0",
+  });
 });
 
 test("falls back to latest when version is omitted and no supported root lockfile is present", async () => {
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "README.md": "# app\n",
   });
-  mockLatestRelease();
-  const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    spec: "supabase@latest",
+    version: "latest",
+  });
 });
 
 test("falls back to latest when version is omitted and no workspace is available", async () => {
   delete process.env.GITHUB_WORKSPACE;
-  mockLatestRelease();
-  const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    spec: "supabase@latest",
+    version: "latest",
+  });
 });
 
 test("uses the declared bun.lock version when the resolved package entry is missing", async () => {
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "bun.lock": createBunLock("2.44.1", { includePackageEntry: false, useDevDependency: true }),
   });
-  const cliDir = createFakeCli("supabase 2.44.1");
-  const spies = createActionSpies("", cliDir, "/download/v2.44.1/supabase_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.44.1");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(resolvePackage("")).toEqual({
+    spec: "supabase@2.44.1",
+    version: "2.44.1",
+  });
 });
 
 test("falls through bun.lock without supabase and uses a pnpm string dependency version", async () => {
@@ -440,88 +400,212 @@ test("falls through bun.lock without supabase and uses a pnpm string dependency 
     "bun.lock": createBunLock("2.47.0", { includeDependency: false }),
     "pnpm-lock.yaml": createPnpmLock("2.47.0", { asString: true }),
   });
-  const cliDir = createFakeCli("supabase 2.47.0");
-  const spies = createActionSpies("", cliDir, "/download/v2.47.0/supabase_");
-  const { run } = await getMainModule();
+  const { resolvePackage } = await getMainModule();
 
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.47.0");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
-});
-
-test("falls through malformed pnpm lockfiles and uses the next supported root lockfile", async () => {
-  process.env.GITHUB_WORKSPACE = createWorkspace({
-    "pnpm-lock.yaml": "not: [valid",
-    "package-lock.json": createPackageLock("2.48.0"),
+  expect(resolvePackage("")).toEqual({
+    integrity: "sha512-pnpm",
+    spec: "supabase@2.47.0",
+    version: "2.47.0",
   });
-  const cliDir = createFakeCli("supabase 2.48.0");
-  const spies = createActionSpies("", cliDir, "/download/v2.48.0/supabase_");
-  const { run } = await getMainModule();
-
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.48.0");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
-});
-
-test("falls through unreadable bun.lock paths and malformed package-lock files to latest", async () => {
-  const workspace = createWorkspace({
-    "package-lock.json": "{ invalid",
-  });
-  mkdirSync(path.join(workspace, "bun.lock"), { recursive: true });
-  process.env.GITHUB_WORKSPACE = workspace;
-  mockLatestRelease();
-  const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
-  const { run } = await getMainModule();
-
-  await run();
-
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
-  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
-  expect(spies.setFailed).not.toHaveBeenCalled();
 });
 
 test("falls back to latest when a pnpm dependency entry has no concrete version", async () => {
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "pnpm-lock.yaml": createPnpmLock("2.49.0", { includeVersion: false }),
   });
-  mockLatestRelease();
-  const cliDir = createFakeCli("supabase 2.84.2");
-  const spies = createActionSpies("", cliDir, "/download/v2.99.0/supabase_2.99.0_");
+  const { resolvePackage } = await getMainModule();
+
+  expect(resolvePackage("")).toEqual({
+    spec: "supabase@latest",
+    version: "latest",
+  });
+});
+
+test("installs the CLI with npm into an isolated prefix", async () => {
+  const logPath = installFakeNpm();
+  const { installCli } = await getMainModule();
+
+  const cliPath = await installCli({
+    spec: "supabase@2.101.0",
+    version: "2.101.0",
+  });
+
+  expect(cliPath).toContain(`${path.sep}node_modules${path.sep}.bin`);
+  expect(readNpmCalls(logPath)).toEqual([
+    viewMetadataCall("supabase@2.101.0"),
+    [
+      "install",
+      "--prefix",
+      expect.any(String),
+      "--omit=dev",
+      "--include=optional",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      "--ignore-scripts=true",
+      "supabase@2.101.0",
+    ],
+  ]);
+});
+
+test("allows install scripts for legacy npm packages that declare a preinstall", async () => {
+  const logPath = installFakeNpm("supabase 1.15.1", {
+    bin: "bin/supabase",
+    scripts: { preinstall: "node scripts/preinstall.js" },
+  });
+  const { installCli } = await getMainModule();
+
+  await installCli({
+    spec: "supabase@1.15.1",
+    version: "1.15.1",
+  });
+
+  expect(readNpmCalls(logPath)).toEqual([
+    viewMetadataCall("supabase@1.15.1"),
+    [
+      "install",
+      "--prefix",
+      expect.any(String),
+      "--omit=dev",
+      "--include=optional",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      "--ignore-scripts=false",
+      "supabase@1.15.1",
+    ],
+  ]);
+});
+
+test("allows install scripts for npm packages that declare a postinstall", async () => {
+  const logPath = installFakeNpm("supabase 1.178.2", {
+    bin: "bin/supabase",
+    scripts: { postinstall: "node scripts/postinstall.js" },
+  });
+  const { installCli } = await getMainModule();
+
+  await installCli({
+    spec: "supabase@1.178.2",
+    version: "1.178.2",
+  });
+
+  expect(readNpmCalls(logPath)).toEqual([
+    viewMetadataCall("supabase@1.178.2"),
+    [
+      "install",
+      "--prefix",
+      expect.any(String),
+      "--omit=dev",
+      "--include=optional",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      "--ignore-scripts=false",
+      "supabase@1.178.2",
+    ],
+  ]);
+});
+
+test("verifies lockfile integrity before installing", async () => {
+  const logPath = installFakeNpm("supabase 2.101.0", { integrity: "sha512-lock" });
+  const { installCli } = await getMainModule();
+
+  await installCli({
+    integrity: "sha512-lock",
+    spec: "supabase@2.101.0",
+    version: "2.101.0",
+  });
+
+  expect(readNpmCalls(logPath)).toEqual([
+    viewMetadataCall("supabase@2.101.0"),
+    [
+      "install",
+      "--prefix",
+      expect.any(String),
+      "--omit=dev",
+      "--include=optional",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      "--ignore-scripts=true",
+      "supabase@2.101.0",
+    ],
+  ]);
+});
+
+test("fails when lockfile integrity does not match the registry", async () => {
+  installFakeNpm("supabase 2.101.0", { integrity: "sha512-registry" });
+  const { installCli } = await getMainModule();
+
+  try {
+    await installCli({
+      integrity: "sha512-lock",
+      spec: "supabase@2.101.0",
+      version: "2.101.0",
+    });
+    throw new Error("Expected installCli to reject");
+  } catch (error) {
+    expect(error).toEqual(
+      new Error("Lockfile integrity for supabase@2.101.0 does not match the npm registry"),
+    );
+  }
+});
+
+test("fails when the npm package does not expose a Supabase CLI executable", async () => {
+  installFakeNpm("supabase 2.101.0", { bin: "missing" });
+  const { installCli } = await getMainModule();
+
+  try {
+    await installCli({
+      spec: "supabase@2.101.0",
+      version: "2.101.0",
+    });
+    throw new Error("Expected installCli to reject");
+  } catch (error) {
+    expect(error).toEqual(
+      new Error("The npm package supabase@2.101.0 does not expose a supabase executable"),
+    );
+  }
+});
+
+test("runs the action with a package-lock resolution", async () => {
+  const logPath = installFakeNpm("supabase 2.43.0", { integrity: "sha512-package-lock" });
+  process.env.GITHUB_WORKSPACE = createWorkspace({
+    "package-lock.json": createPackageLock("2.43.0", "sha512-package-lock"),
+  });
+  const spies = createActionSpies("");
   const { run } = await getMainModule();
 
   await run();
 
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.84.2");
+  expect(readNpmCalls(logPath)[0]).toEqual(viewMetadataCall("supabase@2.43.0"));
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.43.0");
+  expect(spies.addPath).toHaveBeenCalledWith(expect.stringContaining("node_modules"));
   expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
   expect(spies.setFailed).not.toHaveBeenCalled();
 });
 
 test("explicit version overrides detected root lockfiles", async () => {
+  installFakeNpm("supabase 1.1.6");
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "bun.lock": createBunLock("2.45.0"),
   });
-  const cliDir = createFakeCli("supabase 1.0.0");
-  const spies = createActionSpies("1.0.0", cliDir, "/download/v1.0.0/supabase_1.0.0_");
+  const spies = createActionSpies("1.1.6");
   const { run } = await getMainModule();
 
   await run();
 
-  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 1.0.0");
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 1.1.6");
   expect(spies.exportVariable).not.toHaveBeenCalled();
   expect(spies.setFailed).not.toHaveBeenCalled();
 });
 
 test("fails when the installed CLI does not report a version", async () => {
+  installFakeNpm("");
   process.env.GITHUB_WORKSPACE = createWorkspace({
-    "package-lock.json": createPackageLock("2.46.0"),
+    "package-lock.json": createPackageLock("2.46.0", "sha512-test"),
   });
-  const cliDir = createFakeCli("");
-  const spies = createActionSpies("", cliDir, "/download/v2.46.0/supabase_");
+  const spies = createActionSpies("");
   const { run } = await getMainModule();
 
   await run();

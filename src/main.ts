@@ -1,22 +1,31 @@
-import { $, semver } from "bun";
+import { semver } from "bun";
 import * as core from "@actions/core";
-import * as tc from "@actions/tool-cache";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
-const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
-const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
-const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
+const NPM_PACKAGE = "supabase";
+const NPM_EXECUTABLE_ENV = "SUPABASE_SETUP_CLI_NPM";
+const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as const;
+const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta"]);
+const CONCRETE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const CONCRETE_VERSION_EXTRACT_PATTERN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
 
-type ArchiveFormat = "apk" | "tar" | "zip";
+type PackageResolution = {
+  spec: string;
+  version: string;
+  integrity?: string;
+};
 
-type DownloadArchive = {
-  url: string;
-  format: ArchiveFormat;
+type PackageMetadata = {
+  version?: unknown;
+  bin?: unknown;
+  scripts?: unknown;
+  "dist.integrity"?: unknown;
 };
 
 type BunLock = {
@@ -35,6 +44,12 @@ type PnpmDependency =
       version?: string;
     };
 
+type PnpmPackage = {
+  resolution?: {
+    integrity?: string;
+  };
+};
+
 type PnpmLock = {
   importers?: {
     ".": {
@@ -42,19 +57,16 @@ type PnpmLock = {
       devDependencies?: Record<string, PnpmDependency>;
     };
   };
+  packages?: Record<string, PnpmPackage>;
 };
 
 type PackageLock = {
-  packages?: Record<string, { version?: string }>;
-  dependencies?: Record<string, { version?: string }>;
+  packages?: Record<string, { integrity?: string; version?: string }>;
+  dependencies?: Record<string, { integrity?: string; version?: string }>;
 };
 
-function getArchivePlatform(platform: NodeJS.Platform): string {
-  return platform === "win32" ? "windows" : platform;
-}
-
-function getArchiveArch(arch: NodeJS.Architecture): string {
-  return arch === "x64" ? "amd64" : arch;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function extractConcreteVersion(raw: string | undefined): string | null {
@@ -62,12 +74,39 @@ function extractConcreteVersion(raw: string | undefined): string | null {
     return null;
   }
 
-  const match = raw.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/);
+  const match = raw.match(CONCRETE_VERSION_EXTRACT_PATTERN);
   return match?.[0] ?? null;
 }
 
 function normalizeVersion(version: string): string {
   return version.replace(/^v/i, "");
+}
+
+function normalizeSupportedVersion(version: string): string {
+  const normalizedVersion = normalizeVersion(version.trim());
+  const distTag = normalizedVersion.toLowerCase();
+
+  if (SUPPORTED_DIST_TAGS.has(distTag)) {
+    return distTag;
+  }
+
+  if (CONCRETE_VERSION_PATTERN.test(normalizedVersion)) {
+    return normalizedVersion;
+  }
+
+  throw new Error(
+    `Unsupported Supabase CLI version "${version}". Use latest, beta, or a fixed npm package version like 2.101.0.`,
+  );
+}
+
+function toPackageResolution(version: string, integrity?: string): PackageResolution {
+  const normalizedVersion = normalizeSupportedVersion(version);
+
+  return {
+    spec: `${NPM_PACKAGE}@${normalizedVersion}`,
+    version: normalizedVersion,
+    integrity,
+  };
 }
 
 function readWorkspaceLockfile(workspaceRoot: string, filename: string): string | null {
@@ -84,7 +123,7 @@ function readWorkspaceLockfile(workspaceRoot: string, filename: string): string 
   }
 }
 
-function detectVersionFromBunLock(workspaceRoot: string): string | null {
+function detectResolutionFromBunLock(workspaceRoot: string): PackageResolution | null {
   const text = readWorkspaceLockfile(workspaceRoot, "bun.lock");
 
   if (!text) {
@@ -95,24 +134,28 @@ function detectVersionFromBunLock(workspaceRoot: string): string | null {
     const lockfile = JSON.parse(text.replace(/,\s*([}\]])/g, "$1")) as BunLock;
     const rootWorkspace = lockfile.workspaces?.[""];
     const declaredVersion =
-      rootWorkspace?.dependencies?.supabase ?? rootWorkspace?.devDependencies?.supabase;
+      rootWorkspace?.dependencies?.[NPM_PACKAGE] ?? rootWorkspace?.devDependencies?.[NPM_PACKAGE];
 
     if (!declaredVersion) {
       return null;
     }
 
-    const resolvedPackage = lockfile.packages?.supabase;
+    const resolvedPackage = lockfile.packages?.[NPM_PACKAGE];
     if (Array.isArray(resolvedPackage) && typeof resolvedPackage[0] === "string") {
-      return extractConcreteVersion(resolvedPackage[0]);
+      const version = extractConcreteVersion(resolvedPackage[0]);
+      const integrity = typeof resolvedPackage[3] === "string" ? resolvedPackage[3] : undefined;
+
+      return version ? toPackageResolution(version, integrity) : null;
     }
 
-    return extractConcreteVersion(declaredVersion);
+    const version = extractConcreteVersion(declaredVersion);
+    return version ? toPackageResolution(version) : null;
   } catch {
     return null;
   }
 }
 
-function detectVersionFromPnpmLock(workspaceRoot: string): string | null {
+function detectResolutionFromPnpmLock(workspaceRoot: string): PackageResolution | null {
   const text = readWorkspaceLockfile(workspaceRoot, "pnpm-lock.yaml");
 
   if (!text) {
@@ -123,19 +166,29 @@ function detectVersionFromPnpmLock(workspaceRoot: string): string | null {
     const lockfile = Bun.YAML.parse(text) as PnpmLock;
     const rootImporter = lockfile.importers?.["."];
     const dependency =
-      rootImporter?.dependencies?.supabase ?? rootImporter?.devDependencies?.supabase;
+      rootImporter?.dependencies?.[NPM_PACKAGE] ?? rootImporter?.devDependencies?.[NPM_PACKAGE];
+    const version =
+      typeof dependency === "string"
+        ? extractConcreteVersion(dependency)
+        : extractConcreteVersion(dependency?.version);
 
-    if (typeof dependency === "string") {
-      return extractConcreteVersion(dependency);
+    if (!version) {
+      return null;
     }
 
-    return extractConcreteVersion(dependency?.version);
+    const integrity = Object.entries(lockfile.packages ?? {}).find(
+      ([packageKey]) =>
+        packageKey === `${NPM_PACKAGE}@${version}` ||
+        packageKey.startsWith(`/${NPM_PACKAGE}@${version}`),
+    )?.[1].resolution?.integrity;
+
+    return toPackageResolution(version, integrity);
   } catch {
     return null;
   }
 }
 
-function detectVersionFromPackageLock(workspaceRoot: string): string | null {
+function detectResolutionFromPackageLock(workspaceRoot: string): PackageResolution | null {
   const text = readWorkspaceLockfile(workspaceRoot, "package-lock.json");
 
   if (!text) {
@@ -144,147 +197,140 @@ function detectVersionFromPackageLock(workspaceRoot: string): string | null {
 
   try {
     const lockfile = JSON.parse(text) as PackageLock;
+    const packageEntry = lockfile.packages?.[`node_modules/${NPM_PACKAGE}`];
+    const dependencyEntry = lockfile.dependencies?.[NPM_PACKAGE];
+    const version =
+      extractConcreteVersion(packageEntry?.version) ??
+      extractConcreteVersion(dependencyEntry?.version);
 
-    return (
-      extractConcreteVersion(lockfile.packages?.["node_modules/supabase"]?.version) ??
-      extractConcreteVersion(lockfile.dependencies?.supabase?.version)
-    );
+    return version
+      ? toPackageResolution(version, packageEntry?.integrity ?? dependencyEntry?.integrity)
+      : null;
   } catch {
     return null;
   }
 }
 
-function resolveVersion(inputVersion: string): string {
+export function resolvePackage(inputVersion: string): PackageResolution {
   const requestedVersion = inputVersion.trim();
 
   if (requestedVersion) {
-    return requestedVersion;
+    return toPackageResolution(requestedVersion);
   }
 
   const workspaceRoot = process.env.GITHUB_WORKSPACE?.trim();
 
   if (!workspaceRoot) {
-    return DEFAULT_VERSION;
+    return toPackageResolution(DEFAULT_VERSION);
   }
 
   return (
-    detectVersionFromBunLock(workspaceRoot) ??
-    detectVersionFromPnpmLock(workspaceRoot) ??
-    detectVersionFromPackageLock(workspaceRoot) ??
-    DEFAULT_VERSION
+    detectResolutionFromBunLock(workspaceRoot) ??
+    detectResolutionFromPnpmLock(workspaceRoot) ??
+    detectResolutionFromPackageLock(workspaceRoot) ??
+    toPackageResolution(DEFAULT_VERSION)
   );
 }
 
-async function resolveLatestVersion(): Promise<string> {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  const githubToken = process.env[GITHUB_TOKEN_ENV]?.trim();
-
-  if (githubToken) {
-    headers.Authorization = `Bearer ${githubToken}`;
+function verifyPackageIntegrity(resolution: PackageResolution, metadata: PackageMetadata): void {
+  if (!resolution.integrity) {
+    return;
   }
 
-  const response = await fetch(GITHUB_RELEASES_API, { headers });
-  if (!response.ok) {
-    throw new Error(`Failed to resolve latest Supabase CLI release: ${response.statusText}`);
+  const registryIntegrity = metadata["dist.integrity"];
+  if (registryIntegrity !== resolution.integrity) {
+    throw new Error(`Lockfile integrity for ${resolution.spec} does not match the npm registry`);
   }
-
-  const release = (await response.json()) as { tag_name?: unknown };
-  if (typeof release.tag_name !== "string") {
-    throw new Error("Failed to resolve latest Supabase CLI release: missing tag name");
-  }
-
-  return normalizeVersion(release.tag_name);
 }
 
-function getArchiveFormat(
-  version: string,
-  platform: NodeJS.Platform,
-  isMuslLinux: boolean,
-): ArchiveFormat {
-  if (
-    platform === "linux" &&
-    isMuslLinux &&
-    semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0
-  ) {
-    return "apk";
+async function getPackageMetadata(resolution: PackageResolution): Promise<PackageMetadata> {
+  const output = await runNpm([
+    "view",
+    resolution.spec,
+    "version",
+    "bin",
+    "scripts",
+    "dist.integrity",
+    "--json",
+  ]);
+  const metadata = JSON.parse(output) as unknown;
+
+  if (!isRecord(metadata)) {
+    throw new Error(`Could not read npm metadata for ${resolution.spec}`);
   }
 
-  if (platform === "win32" && semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0) {
-    return "zip";
-  }
-
-  return "tar";
+  return metadata;
 }
 
-function getArchiveFilename(
-  version: string,
-  platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
-  archiveFormat: ArchiveFormat,
-): string {
-  const archivePlatform = getArchivePlatform(platform);
-  const archiveArch = getArchiveArch(arch);
-
-  if (semver.order(version, REGISTRY_VERSION) === -1) {
-    return `supabase_${version}_${archivePlatform}_${archiveArch}.tar.gz`;
+function verifyPackageMetadata(resolution: PackageResolution, metadata: PackageMetadata): void {
+  if (typeof metadata.version !== "string" || !CONCRETE_VERSION_PATTERN.test(metadata.version)) {
+    throw new Error(`Could not resolve a fixed npm version for ${resolution.spec}`);
   }
 
-  if (platform === "linux" && archiveFormat === "apk") {
-    return `supabase_${version}_${archivePlatform}_${archiveArch}.apk`;
-  }
+  const bin = metadata.bin;
+  const hasSupabaseBin =
+    typeof bin === "string" || (isRecord(bin) && typeof bin[NPM_PACKAGE] === "string");
 
-  if (semver.order(version, VERSIONED_ARCHIVE_VERSION) >= 0) {
-    const extension = platform === "win32" ? "zip" : "tar.gz";
-    return `supabase_${version}_${archivePlatform}_${archiveArch}.${extension}`;
+  if (!hasSupabaseBin) {
+    throw new Error(`The npm package ${resolution.spec} does not expose a supabase executable`);
   }
-
-  return `supabase_${archivePlatform}_${archiveArch}.tar.gz`;
 }
 
-export async function getDownloadArchive(
-  version: string,
-  platform = process.platform,
-  arch = process.arch,
-  isMuslLinux?: boolean,
-): Promise<DownloadArchive> {
-  const resolvedVersion =
-    version.toLowerCase() === "latest" ? await resolveLatestVersion() : normalizeVersion(version);
-  const format = getArchiveFormat(
-    resolvedVersion,
-    platform,
-    isMuslLinux ?? (await detectMuslLinux(platform)),
+function shouldIgnoreInstallScripts(metadata: PackageMetadata): boolean {
+  const scripts = metadata.scripts;
+
+  return !(
+    isRecord(scripts) &&
+    INSTALL_LIFECYCLE_SCRIPTS.some((script) => typeof scripts[script] === "string")
   );
-  const filename = getArchiveFilename(resolvedVersion, platform, arch, format);
-
-  return {
-    url: `https://github.com/supabase/cli/releases/download/v${resolvedVersion}/${filename}`,
-    format,
-  };
 }
 
-async function detectMuslLinux(platform = process.platform): Promise<boolean> {
-  if (platform !== "linux") {
-    return false;
-  }
-
-  if (existsSync("/etc/alpine-release")) {
-    return true;
-  }
-
-  try {
-    const output = await $`ldd --version`.quiet().text();
-    return output.toLowerCase().includes("musl");
-  } catch (error) {
-    const output = error instanceof Error ? error.message : String(error);
-    return output.toLowerCase().includes("musl");
-  }
+function createInstallRoot(): string {
+  const tempRoot = process.env.RUNNER_TEMP?.trim() || os.tmpdir();
+  return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
-export function getCliPath(extractedPath: string, archiveFormat: ArchiveFormat): string {
-  return archiveFormat === "apk" ? path.join(extractedPath, "usr", "bin") : extractedPath;
+async function runNpm(args: string[]): Promise<string> {
+  const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
+  const proc = Bun.spawn([executable, ...args], {
+    env: process.env,
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    throw new Error(stderr.trim() || `npm ${args.join(" ")} failed`);
+  }
+
+  return stdout;
+}
+
+export async function installCli(resolution: PackageResolution): Promise<string> {
+  const metadata = await getPackageMetadata(resolution);
+  verifyPackageMetadata(resolution, metadata);
+  verifyPackageIntegrity(resolution, metadata);
+
+  const installRoot = createInstallRoot();
+
+  await runNpm([
+    "install",
+    "--prefix",
+    installRoot,
+    "--omit=dev",
+    "--include=optional",
+    "--no-audit",
+    "--no-fund",
+    "--no-package-lock",
+    `--ignore-scripts=${shouldIgnoreInstallScripts(metadata)}`,
+    resolution.spec,
+  ]);
+
+  return path.join(installRoot, "node_modules", ".bin");
 }
 
 function getCliExecutablePath(cliPath: string): string {
@@ -292,21 +338,36 @@ function getCliExecutablePath(cliPath: string): string {
     return path.join(cliPath, "supabase");
   }
 
-  const exePath = path.join(cliPath, "supabase.exe");
-  if (existsSync(exePath)) {
-    return exePath;
-  }
-
   const cmdPath = path.join(cliPath, "supabase.cmd");
   if (existsSync(cmdPath)) {
     return cmdPath;
+  }
+
+  const exePath = path.join(cliPath, "supabase.exe");
+  if (existsSync(exePath)) {
+    return exePath;
   }
 
   return path.join(cliPath, "supabase");
 }
 
 export async function determineInstalledVersion(cliPath: string): Promise<string> {
-  const version = (await $`${getCliExecutablePath(cliPath)} --version`.text()).trim();
+  const executable = getCliExecutablePath(cliPath);
+  const proc = Bun.spawn([executable, "--version"], {
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    throw new Error(stderr.trim() || "Could not determine installed Supabase CLI version");
+  }
+
+  const version = stdout.trim();
   if (!version) {
     throw new Error("Could not determine installed Supabase CLI version");
   }
@@ -314,21 +375,24 @@ export async function determineInstalledVersion(cliPath: string): Promise<string
   return version;
 }
 
+function shouldUseGhcrRegistry(requestedVersion: string, installedVersion: string): boolean {
+  if (requestedVersion.toLowerCase() === DEFAULT_VERSION) {
+    return true;
+  }
+
+  const concreteVersion = extractConcreteVersion(installedVersion);
+  return concreteVersion !== null && semver.order(concreteVersion, REGISTRY_VERSION) >= 0;
+}
+
 export async function run(): Promise<void> {
   try {
-    const version = resolveVersion(core.getInput("version"));
-    const archive = await getDownloadArchive(version);
-    const archivePath = await tc.downloadTool(archive.url);
-    const extractedPath =
-      archive.format === "zip"
-        ? await tc.extractZip(archivePath)
-        : await tc.extractTar(archivePath);
-    const cliPath = getCliPath(extractedPath, archive.format);
+    const resolution = resolvePackage(core.getInput("version"));
+    const cliPath = await installCli(resolution);
     const installedVersion = await determineInstalledVersion(cliPath);
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (version.toLowerCase() === "latest" || semver.order(version, REGISTRY_VERSION) >= 0) {
+    if (shouldUseGhcrRegistry(resolution.version, installedVersion)) {
       core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
     }
   } catch (error) {
