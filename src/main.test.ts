@@ -7,6 +7,7 @@ import * as core from "@actions/core";
 
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const originalPath = process.env.PATH;
+const originalNpmUserconfig = process.env.NPM_CONFIG_USERCONFIG;
 const originalRunnerTemp = process.env.RUNNER_TEMP;
 const originalWorkspace = process.env.GITHUB_WORKSPACE;
 const tempDirs = new Set<string>();
@@ -15,14 +16,21 @@ let mainModule: typeof import("./main.ts") | null = null;
 afterEach(() => {
   mock.restore();
   process.env.PATH = originalPath;
+  if (originalNpmUserconfig === undefined) {
+    delete process.env.NPM_CONFIG_USERCONFIG;
+  } else {
+    process.env.NPM_CONFIG_USERCONFIG = originalNpmUserconfig;
+  }
   process.env.RUNNER_TEMP = originalRunnerTemp;
   process.env.GITHUB_WORKSPACE = originalWorkspace;
   delete process.env.FAKE_CLI_VERSION;
   delete process.env.FAKE_NPM_BIN;
   delete process.env.FAKE_NPM_INTEGRITY;
   delete process.env.FAKE_NPM_CWD_LOG;
+  delete process.env.FAKE_NPM_ENV_LOG;
   delete process.env.FAKE_NPM_LOG;
   delete process.env.FAKE_NPM_PACKAGE_VERSION;
+  delete process.env.FAKE_NPM_PREFIX_CONFIG_LOG;
   delete process.env.FAKE_NPM_SCRIPTS;
   delete process.env.SUPABASE_SETUP_CLI_NPM;
 
@@ -148,12 +156,16 @@ function createFakeNpm(): string {
   mkdirSync(binDir, { recursive: true });
   writeFileSync(
     scriptPath,
-    `import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args) + "\\n");
 appendFileSync(process.env.FAKE_NPM_CWD_LOG, process.cwd() + "\\n");
+appendFileSync(
+  process.env.FAKE_NPM_ENV_LOG,
+  JSON.stringify({ NPM_CONFIG_USERCONFIG: process.env.NPM_CONFIG_USERCONFIG ?? null }) + "\\n",
+);
 
 if (args[0] === "view") {
   const bin =
@@ -187,6 +199,11 @@ if (!prefix) {
 
 const binDir = path.join(prefix, "node_modules", ".bin");
 mkdirSync(binDir, { recursive: true });
+const prefixConfigPath = path.join(prefix, ".npmrc");
+appendFileSync(
+  process.env.FAKE_NPM_PREFIX_CONFIG_LOG,
+  JSON.stringify(existsSync(prefixConfigPath) ? readFileSync(prefixConfigPath, "utf8") : null) + "\\n",
+);
 
 if (process.platform === "win32") {
   writeFileSync(
@@ -232,12 +249,20 @@ function installFakeNpm(
 ): string {
   const binDir = createFakeNpm();
   const cwdLogPath = path.join(createTempDir("setup-cli-fake-npm-cwd-log-"), "npm-cwd.log");
+  const envLogPath = path.join(createTempDir("setup-cli-fake-npm-env-log-"), "npm-env.log");
   const logPath = path.join(createTempDir("setup-cli-fake-npm-log-"), "npm.log");
+  const prefixConfigLogPath = path.join(
+    createTempDir("setup-cli-fake-npm-prefix-config-log-"),
+    "npm-prefix-config.log",
+  );
   writeFileSync(cwdLogPath, "");
+  writeFileSync(envLogPath, "");
   writeFileSync(logPath, "");
+  writeFileSync(prefixConfigLogPath, "");
   process.env.FAKE_CLI_VERSION = versionOutput;
   process.env.FAKE_NPM_BIN = options.bin ?? "dist/supabase.js";
   process.env.FAKE_NPM_CWD_LOG = cwdLogPath;
+  process.env.FAKE_NPM_ENV_LOG = envLogPath;
   process.env.FAKE_NPM_INTEGRITY = options.integrity ?? "sha512-test";
   process.env.FAKE_NPM_LOG = logPath;
   process.env.FAKE_NPM_PACKAGE_VERSION =
@@ -253,6 +278,7 @@ function installFakeNpm(
     binDir,
     process.platform === "win32" ? "npm.cmd" : "npm",
   );
+  process.env.FAKE_NPM_PREFIX_CONFIG_LOG = prefixConfigLogPath;
 
   return logPath;
 }
@@ -270,6 +296,22 @@ function readNpmCwds(): string[] {
     .trim()
     .split("\n")
     .filter(Boolean);
+}
+
+function readNpmEnvs(): Array<{ NPM_CONFIG_USERCONFIG: string | null }> {
+  return readFileSync(process.env.FAKE_NPM_ENV_LOG ?? "", "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { NPM_CONFIG_USERCONFIG: string | null });
+}
+
+function readNpmPrefixConfigs(): Array<string | null> {
+  return readFileSync(process.env.FAKE_NPM_PREFIX_CONFIG_LOG ?? "", "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as string | null);
 }
 
 function viewMetadataCall(spec: string): string[] {
@@ -462,8 +504,17 @@ test("installs the CLI with npm into an isolated prefix", async () => {
 
 test("runs npm from the caller workspace so project npm config is honored", async () => {
   const workspace = createWorkspace({
-    ".npmrc": "registry=https://registry.example.test\n",
+    ".npmrc": [
+      "registry=https://registry.example.test",
+      "@internal:registry=https://registry.internal.example.test",
+      "//registry.example.test/:_authToken=${NPM_TOKEN}",
+      "bin-links=false",
+      "package-lock=true",
+    ].join("\n"),
   });
+  const userconfigPath = path.join(createTempDir("setup-cli-userconfig-"), ".npmrc");
+  writeFileSync(userconfigPath, "//registry.example.test/:username=existing\n");
+  process.env.NPM_CONFIG_USERCONFIG = userconfigPath;
   process.env.GITHUB_WORKSPACE = workspace;
   const logPath = installFakeNpm();
   const { installCli } = await getMainModule();
@@ -475,6 +526,18 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
 
   const realWorkspace = realpathSync(workspace);
   expect(readNpmCwds().map((cwd) => realpathSync(cwd))).toEqual([realWorkspace, realWorkspace]);
+  expect(readNpmEnvs().map((env) => env.NPM_CONFIG_USERCONFIG)).toEqual([
+    userconfigPath,
+    userconfigPath,
+  ]);
+  expect(readNpmPrefixConfigs()).toEqual([
+    [
+      "registry=https://registry.example.test",
+      "@internal:registry=https://registry.internal.example.test",
+      "//registry.example.test/:_authToken=${NPM_TOKEN}",
+      "",
+    ].join("\n"),
+  ]);
   expect(readNpmCalls(logPath)).toEqual([
     viewMetadataCall("supabase@2.101.0"),
     [
@@ -487,8 +550,6 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
       "--no-fund",
       "--no-package-lock",
       "--ignore-scripts=true",
-      "--userconfig",
-      path.join(workspace, ".npmrc"),
       "supabase@2.101.0",
     ],
   ]);

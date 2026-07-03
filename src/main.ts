@@ -1,6 +1,6 @@
 import { semver } from "bun";
 import * as core from "@actions/core";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,23 @@ const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as co
 const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta"]);
 const CONCRETE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const CONCRETE_VERSION_EXTRACT_PATTERN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
+const INSTALL_NPM_CONFIG_KEYS = new Set([
+  "_auth",
+  "_authToken",
+  "_password",
+  "always-auth",
+  "ca",
+  "cafile",
+  "cert",
+  "email",
+  "https-proxy",
+  "key",
+  "noproxy",
+  "proxy",
+  "registry",
+  "strict-ssl",
+  "username",
+]);
 
 type PackageResolution = {
   spec: string;
@@ -290,18 +307,47 @@ function createInstallRoot(): string {
   return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
-function getWorkspaceNpmConfigArgs(): string[] {
+function shouldCopyWorkspaceNpmConfigLine(line: string): boolean {
+  const trimmedLine = line.trim();
+  if (!trimmedLine || trimmedLine.startsWith("#") || trimmedLine.startsWith(";")) {
+    return false;
+  }
+
+  const separatorIndex = trimmedLine.indexOf("=");
+  if (separatorIndex === -1) {
+    return false;
+  }
+
+  const rawKey = trimmedLine.slice(0, separatorIndex).trim();
+  const key = rawKey.replace(/\[\]$/, "");
+
+  return (
+    INSTALL_NPM_CONFIG_KEYS.has(key) ||
+    key.endsWith(":registry") ||
+    [...INSTALL_NPM_CONFIG_KEYS].some((configKey) => key.endsWith(`:${configKey}`))
+  );
+}
+
+function copyWorkspaceNpmConfig(installRoot: string): void {
   const workspace = process.env.GITHUB_WORKSPACE?.trim();
   if (!workspace) {
-    return [];
+    return;
   }
 
   const npmrcPath = path.join(workspace, ".npmrc");
   if (!existsSync(npmrcPath)) {
-    return [];
+    return;
   }
 
-  return ["--userconfig", npmrcPath];
+  const configLines = readFileSync(npmrcPath, "utf8")
+    .split(/\r?\n/)
+    .filter(shouldCopyWorkspaceNpmConfigLine);
+
+  if (configLines.length === 0) {
+    return;
+  }
+
+  writeFileSync(path.join(installRoot, ".npmrc"), `${configLines.join("\n")}\n`);
 }
 
 async function runNpm(args: string[]): Promise<string> {
@@ -332,6 +378,7 @@ export async function installCli(resolution: PackageResolution): Promise<string>
   verifyPackageIntegrity(resolution, metadata);
 
   const installRoot = createInstallRoot();
+  copyWorkspaceNpmConfig(installRoot);
 
   await runNpm([
     "install",
@@ -343,7 +390,6 @@ export async function installCli(resolution: PackageResolution): Promise<string>
     "--no-fund",
     "--no-package-lock",
     `--ignore-scripts=${shouldIgnoreInstallScripts(metadata)}`,
-    ...getWorkspaceNpmConfigArgs(),
     resolution.spec,
   ]);
 
