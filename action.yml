@@ -61,18 +61,31 @@ runs:
         # actions/setup-node uses glibc Node builds, so install Alpine's Node/npm instead.
         if command -v apk >/dev/null 2>&1; then
           missing_packages=""
+          prefer_apk_bin=false
           for package in libstdc++ libgcc; do
             if ! apk info -e "${package}" >/dev/null 2>&1; then
               missing_packages="${missing_packages} ${package}"
             fi
           done
 
-          if ! command -v node >/dev/null 2>&1; then
-            missing_packages="${missing_packages} nodejs"
+          if ! command -v node >/dev/null 2>&1 || ! node -p 'process.versions.node' >/dev/null 2>&1; then
+            if [ -x /usr/bin/node ] && /usr/bin/node -p 'process.versions.node' >/dev/null 2>&1; then
+              prefer_apk_bin=true
+            else
+              missing_packages="${missing_packages} nodejs"
+            fi
           fi
 
-          if ! command -v npm >/dev/null 2>&1; then
-            missing_packages="${missing_packages} npm"
+          if ! command -v npm >/dev/null 2>&1 || ! npm --version >/dev/null 2>&1; then
+            if [ -x /usr/bin/npm ] && /usr/bin/npm --version >/dev/null 2>&1; then
+              prefer_apk_bin=true
+            else
+              missing_packages="${missing_packages} npm"
+            fi
+          fi
+
+          if [ "${prefer_apk_bin}" = "true" ]; then
+            echo "/usr/bin" >> "$GITHUB_PATH"
           fi
 
           if [ -z "${missing_packages}" ]; then
@@ -85,6 +98,9 @@ runs:
           fi
 
           apk add --no-cache ${missing_packages}
+          if echo " ${missing_packages} " | grep -Eq ' (nodejs|npm) '; then
+            echo "/usr/bin" >> "$GITHUB_PATH"
+          fi
           exit 0
         fi
 

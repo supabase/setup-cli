@@ -290,6 +290,20 @@ function createInstallRoot(): string {
   return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
+function getWorkspaceNpmConfigArgs(): string[] {
+  const workspace = process.env.GITHUB_WORKSPACE?.trim();
+  if (!workspace) {
+    return [];
+  }
+
+  const npmrcPath = path.join(workspace, ".npmrc");
+  if (!existsSync(npmrcPath)) {
+    return [];
+  }
+
+  return ["--userconfig", npmrcPath];
+}
+
 async function runNpm(args: string[]): Promise<string> {
   const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
   const cwd = process.env.GITHUB_WORKSPACE?.trim() || process.cwd();
@@ -329,6 +343,7 @@ export async function installCli(resolution: PackageResolution): Promise<string>
     "--no-fund",
     "--no-package-lock",
     `--ignore-scripts=${shouldIgnoreInstallScripts(metadata)}`,
+    ...getWorkspaceNpmConfigArgs(),
     resolution.spec,
   ]);
 

@@ -465,7 +465,7 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
     ".npmrc": "registry=https://registry.example.test\n",
   });
   process.env.GITHUB_WORKSPACE = workspace;
-  installFakeNpm();
+  const logPath = installFakeNpm();
   const { installCli } = await getMainModule();
 
   await installCli({
@@ -475,6 +475,23 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
 
   const realWorkspace = realpathSync(workspace);
   expect(readNpmCwds().map((cwd) => realpathSync(cwd))).toEqual([realWorkspace, realWorkspace]);
+  expect(readNpmCalls(logPath)).toEqual([
+    viewMetadataCall("supabase@2.101.0"),
+    [
+      "install",
+      "--prefix",
+      expect.any(String),
+      "--omit=dev",
+      "--include=optional",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      "--ignore-scripts=true",
+      "--userconfig",
+      path.join(workspace, ".npmrc"),
+      "supabase@2.101.0",
+    ],
+  ]);
 });
 
 test("allows install scripts for legacy npm packages that declare a preinstall", async () => {
