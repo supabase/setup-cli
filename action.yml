@@ -61,11 +61,19 @@ runs:
         # actions/setup-node uses glibc Node builds, so install Alpine's Node/npm instead.
         if command -v apk >/dev/null 2>&1; then
           missing_packages=""
-          for package in libstdc++ libgcc nodejs npm; do
+          for package in libstdc++ libgcc; do
             if ! apk info -e "${package}" >/dev/null 2>&1; then
               missing_packages="${missing_packages} ${package}"
             fi
           done
+
+          if ! command -v node >/dev/null 2>&1; then
+            missing_packages="${missing_packages} nodejs"
+          fi
+
+          if ! command -v npm >/dev/null 2>&1; then
+            missing_packages="${missing_packages} npm"
+          fi
 
           if [ -z "${missing_packages}" ]; then
             exit 0

@@ -292,7 +292,9 @@ function createInstallRoot(): string {
 
 async function runNpm(args: string[]): Promise<string> {
   const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
+  const cwd = process.env.GITHUB_WORKSPACE?.trim() || process.cwd();
   const proc = Bun.spawn([executable, ...args], {
+    cwd,
     env: process.env,
     stderr: "pipe",
     stdout: "pipe",

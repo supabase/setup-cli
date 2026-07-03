@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -20,6 +20,7 @@ afterEach(() => {
   delete process.env.FAKE_CLI_VERSION;
   delete process.env.FAKE_NPM_BIN;
   delete process.env.FAKE_NPM_INTEGRITY;
+  delete process.env.FAKE_NPM_CWD_LOG;
   delete process.env.FAKE_NPM_LOG;
   delete process.env.FAKE_NPM_PACKAGE_VERSION;
   delete process.env.FAKE_NPM_SCRIPTS;
@@ -152,6 +153,7 @@ import path from "node:path";
 
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args) + "\\n");
+appendFileSync(process.env.FAKE_NPM_CWD_LOG, process.cwd() + "\\n");
 
 if (args[0] === "view") {
   const bin =
@@ -229,10 +231,13 @@ function installFakeNpm(
   } = {},
 ): string {
   const binDir = createFakeNpm();
+  const cwdLogPath = path.join(createTempDir("setup-cli-fake-npm-cwd-log-"), "npm-cwd.log");
   const logPath = path.join(createTempDir("setup-cli-fake-npm-log-"), "npm.log");
+  writeFileSync(cwdLogPath, "");
   writeFileSync(logPath, "");
   process.env.FAKE_CLI_VERSION = versionOutput;
   process.env.FAKE_NPM_BIN = options.bin ?? "dist/supabase.js";
+  process.env.FAKE_NPM_CWD_LOG = cwdLogPath;
   process.env.FAKE_NPM_INTEGRITY = options.integrity ?? "sha512-test";
   process.env.FAKE_NPM_LOG = logPath;
   process.env.FAKE_NPM_PACKAGE_VERSION =
@@ -258,6 +263,13 @@ function readNpmCalls(logPath: string): string[][] {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as string[]);
+}
+
+function readNpmCwds(): string[] {
+  return readFileSync(process.env.FAKE_NPM_CWD_LOG ?? "", "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
 }
 
 function viewMetadataCall(spec: string): string[] {
@@ -446,6 +458,23 @@ test("installs the CLI with npm into an isolated prefix", async () => {
       "supabase@2.101.0",
     ],
   ]);
+});
+
+test("runs npm from the caller workspace so project npm config is honored", async () => {
+  const workspace = createWorkspace({
+    ".npmrc": "registry=https://registry.example.test\n",
+  });
+  process.env.GITHUB_WORKSPACE = workspace;
+  installFakeNpm();
+  const { installCli } = await getMainModule();
+
+  await installCli({
+    spec: "supabase@2.101.0",
+    version: "2.101.0",
+  });
+
+  const realWorkspace = realpathSync(workspace);
+  expect(readNpmCwds().map((cwd) => realpathSync(cwd))).toEqual([realWorkspace, realWorkspace]);
 });
 
 test("allows install scripts for legacy npm packages that declare a preinstall", async () => {
