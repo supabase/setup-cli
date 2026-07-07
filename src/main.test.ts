@@ -321,7 +321,7 @@ function readNpmPrefixConfigs(): Array<string | null> {
 }
 
 function viewMetadataCall(spec: string): string[] {
-  return ["view", spec, "version", "bin", "scripts", "dist.integrity", "--json"];
+  return ["view", spec, "version", "bin", "scripts", "dist.integrity", "--json", "--offline=false"];
 }
 
 function createActionSpies(inputVersion: string) {
@@ -502,21 +502,26 @@ test("installs the CLI with npm into an isolated prefix", async () => {
       "--no-audit",
       "--no-fund",
       "--no-package-lock",
+      "--offline=false",
+      "--bin-links=true",
       "--ignore-scripts=true",
       "supabase@2.101.0",
     ],
   ]);
 });
 
-test("runs npm with filtered caller workspace config", async () => {
+test("runs npm with caller workspace config and action-owned overrides", async () => {
   const workspace = createWorkspace({
     ".npmrc": [
       "registry=https://registry.example.test",
       "@internal:registry=https://registry.internal.example.test",
       "//registry.example.test/:_authToken=${NPM_TOKEN}",
+      "//registry.example.test/:certfile=certs/client.pem",
+      "//registry.example.test/:keyfile=certs/client-key.pem",
       "always-auth",
-      "cafile=certs/project-ca.pem",
-      "userconfig=${SETUP_CLI_TEST_WORKSPACE}/.npmrc-ci",
+      'cafile="certs/project-ca.pem"',
+      'userconfig="${SETUP_CLI_TEST_WORKSPACE}/.npmrc-ci"',
+      "globalconfig=.npmrc-global",
       "bin-links=false",
       "offline=true",
       "package-lock=true",
@@ -528,6 +533,12 @@ test("runs npm with filtered caller workspace config", async () => {
       "bin-links=false",
       "offline=true",
     ].join("\n"),
+    ".npmrc-global": [
+      "registry=https://global-registry.example.test",
+      "//registry.example.test/:username=global",
+    ].join("\n"),
+    "certs/client-key.pem": "client-key",
+    "certs/client.pem": "client",
     "certs/delegated-ca.pem": "delegated-ca",
     "certs/project-ca.pem": "project-ca",
   });
@@ -546,24 +557,15 @@ test("runs npm with filtered caller workspace config", async () => {
 
   const realWorkspace = realpathSync(workspace);
   const npmCwds = readNpmCwds().map((cwd) => realpathSync(cwd));
-  expect(npmCwds[0]).not.toBe(realWorkspace);
-  expect(npmCwds[1]).toBe(npmCwds[0]);
+  expect(npmCwds).toEqual([realWorkspace, realWorkspace]);
   expect(readNpmEnvs().map((env) => env.NPM_CONFIG_USERCONFIG)).toEqual([
     userconfigPath,
     userconfigPath,
   ]);
-  const filteredConfig = [
-    "registry=https://delegated-registry.example.test",
-    "//registry.example.test/:_password=delegated",
-    `cafile=${path.join(workspace, "certs", "delegated-ca.pem")}`,
-    "registry=https://registry.example.test",
-    "@internal:registry=https://registry.internal.example.test",
-    "//registry.example.test/:_authToken=${NPM_TOKEN}",
-    "always-auth=true",
-    `cafile=${path.join(workspace, "certs", "project-ca.pem")}`,
-    "",
-  ].join("\n");
-  expect(readNpmPrefixConfigs()).toEqual([filteredConfig, filteredConfig]);
+  expect(readNpmPrefixConfigs()).toEqual([
+    readFileSync(path.join(workspace, ".npmrc"), "utf8"),
+    null,
+  ]);
   expect(readNpmCalls(logPath)).toEqual([
     viewMetadataCall("supabase@2.101.0"),
     [
@@ -575,6 +577,8 @@ test("runs npm with filtered caller workspace config", async () => {
       "--no-audit",
       "--no-fund",
       "--no-package-lock",
+      "--offline=false",
+      "--bin-links=true",
       "--ignore-scripts=true",
       "supabase@2.101.0",
     ],
@@ -604,6 +608,8 @@ test("allows install scripts for legacy npm packages that declare a preinstall",
       "--no-audit",
       "--no-fund",
       "--no-package-lock",
+      "--offline=false",
+      "--bin-links=true",
       "--ignore-scripts=false",
       "supabase@1.15.1",
     ],
@@ -633,6 +639,8 @@ test("allows install scripts for npm packages that declare a postinstall", async
       "--no-audit",
       "--no-fund",
       "--no-package-lock",
+      "--offline=false",
+      "--bin-links=true",
       "--ignore-scripts=false",
       "supabase@1.178.2",
     ],
@@ -660,6 +668,8 @@ test("verifies lockfile integrity before installing", async () => {
       "--no-audit",
       "--no-fund",
       "--no-package-lock",
+      "--offline=false",
+      "--bin-links=true",
       "--ignore-scripts=true",
       "supabase@2.101.0",
     ],

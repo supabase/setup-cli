@@ -1,6 +1,6 @@
 import { semver } from "bun";
 import * as core from "@actions/core";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,23 +14,6 @@ const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as co
 const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta"]);
 const CONCRETE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const CONCRETE_VERSION_EXTRACT_PATTERN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
-const INSTALL_NPM_CONFIG_KEYS = new Set([
-  "_auth",
-  "_authToken",
-  "_password",
-  "always-auth",
-  "ca",
-  "cafile",
-  "cert",
-  "email",
-  "https-proxy",
-  "key",
-  "noproxy",
-  "proxy",
-  "registry",
-  "strict-ssl",
-  "username",
-]);
 
 type PackageResolution = {
   spec: string;
@@ -43,11 +26,6 @@ type PackageMetadata = {
   bin?: unknown;
   scripts?: unknown;
   "dist.integrity"?: unknown;
-};
-
-type CopiedNpmConfig = {
-  projectLines: string[];
-  userLines: string[];
 };
 
 type BunLock = {
@@ -265,14 +243,17 @@ function verifyPackageIntegrity(resolution: PackageResolution, metadata: Package
   }
 }
 
-async function getPackageMetadata(
-  resolution: PackageResolution,
-  npmCwd: string,
-): Promise<PackageMetadata> {
-  const output = await runNpm(
-    ["view", resolution.spec, "version", "bin", "scripts", "dist.integrity", "--json"],
-    npmCwd,
-  );
+async function getPackageMetadata(resolution: PackageResolution): Promise<PackageMetadata> {
+  const output = await runNpm([
+    "view",
+    resolution.spec,
+    "version",
+    "bin",
+    "scripts",
+    "dist.integrity",
+    "--json",
+    "--offline=false",
+  ]);
   const metadata = JSON.parse(output) as unknown;
 
   if (!isRecord(metadata)) {
@@ -310,143 +291,10 @@ function createInstallRoot(): string {
   return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
-function createCopiedNpmConfig(): CopiedNpmConfig {
-  return {
-    projectLines: [],
-    userLines: [],
-  };
-}
-
-function expandNpmConfigEnv(rawValue: string): string | null {
-  let missingEnv = false;
-  const expandedValue = rawValue.replace(/\$\{([^}]+)\}/g, (_match, envName: string) => {
-    const envValue = process.env[envName];
-    if (envValue === undefined) {
-      missingEnv = true;
-      return "";
-    }
-
-    return envValue;
-  });
-
-  return missingEnv ? null : expandedValue;
-}
-
-function resolveNpmConfigPath(configRoot: string, rawValue: string): string | null {
-  const expandedValue = expandNpmConfigEnv(rawValue);
-  if (!expandedValue) {
-    return null;
-  }
-
-  if (expandedValue === "~") {
-    return os.homedir();
-  }
-
-  if (expandedValue.startsWith("~/")) {
-    return path.join(os.homedir(), expandedValue.slice(2));
-  }
-
-  return path.isAbsolute(expandedValue) ? expandedValue : path.join(configRoot, expandedValue);
-}
-
-function copyNpmConfigLines(
-  configRoot: string,
-  text: string,
-  visitedConfigs = new Set<string>(),
-): string[] {
-  const copiedConfig = createCopiedNpmConfig();
-
-  for (const line of text.split(/\r?\n/)) {
-    copyNpmConfigLine(configRoot, line, copiedConfig, visitedConfigs);
-  }
-
-  return [...copiedConfig.userLines, ...copiedConfig.projectLines];
-}
-
-function copyNpmConfigLine(
-  configRoot: string,
-  line: string,
-  copiedConfig: CopiedNpmConfig,
-  visitedConfigs: Set<string>,
-): void {
-  const trimmedLine = line.trim();
-  if (!trimmedLine || trimmedLine.startsWith("#") || trimmedLine.startsWith(";")) {
-    return;
-  }
-
-  const separatorIndex = trimmedLine.indexOf("=");
-  const rawKey = separatorIndex === -1 ? trimmedLine : trimmedLine.slice(0, separatorIndex).trim();
-  const key = rawKey.replace(/\[\]$/, "");
-  const rawValue = separatorIndex === -1 ? "true" : trimmedLine.slice(separatorIndex + 1).trim();
-
-  if (key === "userconfig") {
-    const userconfigPath = resolveNpmConfigPath(configRoot, rawValue);
-    if (!userconfigPath || visitedConfigs.has(userconfigPath)) {
-      return;
-    }
-
-    try {
-      visitedConfigs.add(userconfigPath);
-      copiedConfig.userLines.push(
-        ...copyNpmConfigLines(
-          path.dirname(userconfigPath),
-          readFileSync(userconfigPath, "utf8"),
-          visitedConfigs,
-        ),
-      );
-    } catch {
-      return;
-    }
-
-    return;
-  }
-
-  const shouldCopy =
-    INSTALL_NPM_CONFIG_KEYS.has(key) ||
-    key.endsWith(":registry") ||
-    [...INSTALL_NPM_CONFIG_KEYS].some((configKey) => key.endsWith(`:${configKey}`));
-
-  if (!shouldCopy) {
-    return;
-  }
-
-  if (key === "cafile" || key.endsWith(":cafile")) {
-    const cafilePath = resolveNpmConfigPath(configRoot, rawValue);
-    if (!cafilePath) {
-      return;
-    }
-
-    copiedConfig.projectLines.push(`${rawKey}=${cafilePath}`);
-    return;
-  }
-
-  copiedConfig.projectLines.push(separatorIndex === -1 ? `${rawKey}=true` : trimmedLine);
-}
-
-function copyWorkspaceNpmConfig(installRoot: string): void {
-  const workspace = process.env.GITHUB_WORKSPACE?.trim();
-  if (!workspace) {
-    return;
-  }
-
-  const npmrcPath = path.join(workspace, ".npmrc");
-  if (!existsSync(npmrcPath)) {
-    return;
-  }
-
-  const configLines = copyNpmConfigLines(workspace, readFileSync(npmrcPath, "utf8"));
-
-  if (configLines.length === 0) {
-    return;
-  }
-
-  writeFileSync(path.join(installRoot, ".npmrc"), `${configLines.join("\n")}\n`);
-}
-
-async function runNpm(args: string[], cwd?: string): Promise<string> {
+async function runNpm(args: string[]): Promise<string> {
   const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
   const proc = Bun.spawn([executable, ...args], {
-    cwd: cwd ?? process.env.GITHUB_WORKSPACE?.trim() ?? process.cwd(),
+    cwd: process.env.GITHUB_WORKSPACE?.trim() ?? process.cwd(),
     env: process.env,
     stderr: "pipe",
     stdout: "pipe",
@@ -466,27 +314,25 @@ async function runNpm(args: string[], cwd?: string): Promise<string> {
 
 export async function installCli(resolution: PackageResolution): Promise<string> {
   const installRoot = createInstallRoot();
-  copyWorkspaceNpmConfig(installRoot);
 
-  const metadata = await getPackageMetadata(resolution, installRoot);
+  const metadata = await getPackageMetadata(resolution);
   verifyPackageMetadata(resolution, metadata);
   verifyPackageIntegrity(resolution, metadata);
 
-  await runNpm(
-    [
-      "install",
-      "--prefix",
-      installRoot,
-      "--omit=dev",
-      "--include=optional",
-      "--no-audit",
-      "--no-fund",
-      "--no-package-lock",
-      `--ignore-scripts=${shouldIgnoreInstallScripts(metadata)}`,
-      resolution.spec,
-    ],
+  await runNpm([
+    "install",
+    "--prefix",
     installRoot,
-  );
+    "--omit=dev",
+    "--include=optional",
+    "--no-audit",
+    "--no-fund",
+    "--no-package-lock",
+    "--offline=false",
+    "--bin-links=true",
+    `--ignore-scripts=${shouldIgnoreInstallScripts(metadata)}`,
+    resolution.spec,
+  ]);
 
   return path.join(installRoot, "node_modules", ".bin");
 }
