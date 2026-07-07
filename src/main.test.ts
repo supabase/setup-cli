@@ -167,7 +167,16 @@ appendFileSync(
   JSON.stringify({ NPM_CONFIG_USERCONFIG: process.env.NPM_CONFIG_USERCONFIG ?? null }) + "\\n",
 );
 
+function recordConfig(configPath) {
+  appendFileSync(
+    process.env.FAKE_NPM_PREFIX_CONFIG_LOG,
+    JSON.stringify(existsSync(configPath) ? readFileSync(configPath, "utf8") : null) + "\\n",
+  );
+}
+
 if (args[0] === "view") {
+  recordConfig(path.join(process.cwd(), ".npmrc"));
+
   const bin =
     process.env.FAKE_NPM_BIN === "missing"
       ? undefined
@@ -199,11 +208,7 @@ if (!prefix) {
 
 const binDir = path.join(prefix, "node_modules", ".bin");
 mkdirSync(binDir, { recursive: true });
-const prefixConfigPath = path.join(prefix, ".npmrc");
-appendFileSync(
-  process.env.FAKE_NPM_PREFIX_CONFIG_LOG,
-  JSON.stringify(existsSync(prefixConfigPath) ? readFileSync(prefixConfigPath, "utf8") : null) + "\\n",
-);
+recordConfig(path.join(prefix, ".npmrc"));
 
 if (process.platform === "win32") {
   writeFileSync(
@@ -502,7 +507,7 @@ test("installs the CLI with npm into an isolated prefix", async () => {
   ]);
 });
 
-test("runs npm from the caller workspace so project npm config is honored", async () => {
+test("runs npm with filtered caller workspace config", async () => {
   const workspace = createWorkspace({
     ".npmrc": [
       "registry=https://registry.example.test",
@@ -510,9 +515,14 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
       "//registry.example.test/:_authToken=${NPM_TOKEN}",
       "userconfig=.npmrc-ci",
       "bin-links=false",
+      "offline=true",
       "package-lock=true",
     ].join("\n"),
-    ".npmrc-ci": "//registry.example.test/:_password=delegated\n",
+    ".npmrc-ci": [
+      "//registry.example.test/:_password=delegated",
+      "bin-links=false",
+      "offline=true",
+    ].join("\n"),
   });
   const userconfigPath = path.join(createTempDir("setup-cli-userconfig-"), ".npmrc");
   writeFileSync(userconfigPath, "//registry.example.test/:username=existing\n");
@@ -527,20 +537,21 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
   });
 
   const realWorkspace = realpathSync(workspace);
-  expect(readNpmCwds().map((cwd) => realpathSync(cwd))).toEqual([realWorkspace, realWorkspace]);
+  const npmCwds = readNpmCwds().map((cwd) => realpathSync(cwd));
+  expect(npmCwds[0]).not.toBe(realWorkspace);
+  expect(npmCwds[1]).toBe(npmCwds[0]);
   expect(readNpmEnvs().map((env) => env.NPM_CONFIG_USERCONFIG)).toEqual([
     userconfigPath,
     userconfigPath,
   ]);
-  expect(readNpmPrefixConfigs()).toEqual([
-    [
-      "registry=https://registry.example.test",
-      "@internal:registry=https://registry.internal.example.test",
-      "//registry.example.test/:_authToken=${NPM_TOKEN}",
-      `userconfig=${path.join(workspace, ".npmrc-ci")}`,
-      "",
-    ].join("\n"),
-  ]);
+  const filteredConfig = [
+    "registry=https://registry.example.test",
+    "@internal:registry=https://registry.internal.example.test",
+    "//registry.example.test/:_authToken=${NPM_TOKEN}",
+    "//registry.example.test/:_password=delegated",
+    "",
+  ].join("\n");
+  expect(readNpmPrefixConfigs()).toEqual([filteredConfig, filteredConfig]);
   expect(readNpmCalls(logPath)).toEqual([
     viewMetadataCall("supabase@2.101.0"),
     [
