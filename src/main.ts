@@ -45,6 +45,11 @@ type PackageMetadata = {
   "dist.integrity"?: unknown;
 };
 
+type CopiedNpmConfig = {
+  projectLines: string[];
+  userLines: string[];
+};
+
 type BunLock = {
   workspaces?: {
     "": {
@@ -305,20 +310,43 @@ function createInstallRoot(): string {
   return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
+function createCopiedNpmConfig(): CopiedNpmConfig {
+  return {
+    projectLines: [],
+    userLines: [],
+  };
+}
+
+function expandNpmConfigEnv(rawValue: string): string | null {
+  let missingEnv = false;
+  const expandedValue = rawValue.replace(/\$\{([^}]+)\}/g, (_match, envName: string) => {
+    const envValue = process.env[envName];
+    if (envValue === undefined) {
+      missingEnv = true;
+      return "";
+    }
+
+    return envValue;
+  });
+
+  return missingEnv ? null : expandedValue;
+}
+
 function resolveNpmConfigPath(configRoot: string, rawValue: string): string | null {
-  if (!rawValue || rawValue.includes("${")) {
+  const expandedValue = expandNpmConfigEnv(rawValue);
+  if (!expandedValue) {
     return null;
   }
 
-  if (rawValue === "~") {
+  if (expandedValue === "~") {
     return os.homedir();
   }
 
-  if (rawValue.startsWith("~/")) {
-    return path.join(os.homedir(), rawValue.slice(2));
+  if (expandedValue.startsWith("~/")) {
+    return path.join(os.homedir(), expandedValue.slice(2));
   }
 
-  return path.isAbsolute(rawValue) ? rawValue : path.join(configRoot, rawValue);
+  return path.isAbsolute(expandedValue) ? expandedValue : path.join(configRoot, expandedValue);
 }
 
 function copyNpmConfigLines(
@@ -326,50 +354,51 @@ function copyNpmConfigLines(
   text: string,
   visitedConfigs = new Set<string>(),
 ): string[] {
-  const configLines: string[] = [];
+  const copiedConfig = createCopiedNpmConfig();
 
   for (const line of text.split(/\r?\n/)) {
-    configLines.push(...copyNpmConfigLine(configRoot, line, visitedConfigs));
+    copyNpmConfigLine(configRoot, line, copiedConfig, visitedConfigs);
   }
 
-  return configLines;
+  return [...copiedConfig.userLines, ...copiedConfig.projectLines];
 }
 
 function copyNpmConfigLine(
   configRoot: string,
   line: string,
+  copiedConfig: CopiedNpmConfig,
   visitedConfigs: Set<string>,
-): string[] {
+): void {
   const trimmedLine = line.trim();
   if (!trimmedLine || trimmedLine.startsWith("#") || trimmedLine.startsWith(";")) {
-    return [];
+    return;
   }
 
   const separatorIndex = trimmedLine.indexOf("=");
-  if (separatorIndex === -1) {
-    return [];
-  }
-
-  const rawKey = trimmedLine.slice(0, separatorIndex).trim();
+  const rawKey = separatorIndex === -1 ? trimmedLine : trimmedLine.slice(0, separatorIndex).trim();
   const key = rawKey.replace(/\[\]$/, "");
-  const rawValue = trimmedLine.slice(separatorIndex + 1).trim();
+  const rawValue = separatorIndex === -1 ? "true" : trimmedLine.slice(separatorIndex + 1).trim();
 
   if (key === "userconfig") {
     const userconfigPath = resolveNpmConfigPath(configRoot, rawValue);
     if (!userconfigPath || visitedConfigs.has(userconfigPath)) {
-      return [];
+      return;
     }
 
     try {
       visitedConfigs.add(userconfigPath);
-      return copyNpmConfigLines(
-        path.dirname(userconfigPath),
-        readFileSync(userconfigPath, "utf8"),
-        visitedConfigs,
+      copiedConfig.userLines.push(
+        ...copyNpmConfigLines(
+          path.dirname(userconfigPath),
+          readFileSync(userconfigPath, "utf8"),
+          visitedConfigs,
+        ),
       );
     } catch {
-      return [];
+      return;
     }
+
+    return;
   }
 
   const shouldCopy =
@@ -377,7 +406,21 @@ function copyNpmConfigLine(
     key.endsWith(":registry") ||
     [...INSTALL_NPM_CONFIG_KEYS].some((configKey) => key.endsWith(`:${configKey}`));
 
-  return shouldCopy ? [trimmedLine] : [];
+  if (!shouldCopy) {
+    return;
+  }
+
+  if (key === "cafile" || key.endsWith(":cafile")) {
+    const cafilePath = resolveNpmConfigPath(configRoot, rawValue);
+    if (!cafilePath) {
+      return;
+    }
+
+    copiedConfig.projectLines.push(`${rawKey}=${cafilePath}`);
+    return;
+  }
+
+  copiedConfig.projectLines.push(separatorIndex === -1 ? `${rawKey}=true` : trimmedLine);
 }
 
 function copyWorkspaceNpmConfig(installRoot: string): void {

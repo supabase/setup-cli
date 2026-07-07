@@ -32,6 +32,7 @@ afterEach(() => {
   delete process.env.FAKE_NPM_PACKAGE_VERSION;
   delete process.env.FAKE_NPM_PREFIX_CONFIG_LOG;
   delete process.env.FAKE_NPM_SCRIPTS;
+  delete process.env.SETUP_CLI_TEST_WORKSPACE;
   delete process.env.SUPABASE_SETUP_CLI_NPM;
 
   for (const dir of tempDirs) {
@@ -513,17 +514,24 @@ test("runs npm with filtered caller workspace config", async () => {
       "registry=https://registry.example.test",
       "@internal:registry=https://registry.internal.example.test",
       "//registry.example.test/:_authToken=${NPM_TOKEN}",
-      "userconfig=.npmrc-ci",
+      "always-auth",
+      "cafile=certs/project-ca.pem",
+      "userconfig=${SETUP_CLI_TEST_WORKSPACE}/.npmrc-ci",
       "bin-links=false",
       "offline=true",
       "package-lock=true",
     ].join("\n"),
     ".npmrc-ci": [
+      "registry=https://delegated-registry.example.test",
       "//registry.example.test/:_password=delegated",
+      "cafile=certs/delegated-ca.pem",
       "bin-links=false",
       "offline=true",
     ].join("\n"),
+    "certs/delegated-ca.pem": "delegated-ca",
+    "certs/project-ca.pem": "project-ca",
   });
+  process.env.SETUP_CLI_TEST_WORKSPACE = workspace;
   const userconfigPath = path.join(createTempDir("setup-cli-userconfig-"), ".npmrc");
   writeFileSync(userconfigPath, "//registry.example.test/:username=existing\n");
   process.env.NPM_CONFIG_USERCONFIG = userconfigPath;
@@ -545,10 +553,14 @@ test("runs npm with filtered caller workspace config", async () => {
     userconfigPath,
   ]);
   const filteredConfig = [
+    "registry=https://delegated-registry.example.test",
+    "//registry.example.test/:_password=delegated",
+    `cafile=${path.join(workspace, "certs", "delegated-ca.pem")}`,
     "registry=https://registry.example.test",
     "@internal:registry=https://registry.internal.example.test",
     "//registry.example.test/:_authToken=${NPM_TOKEN}",
-    "//registry.example.test/:_password=delegated",
+    "always-auth=true",
+    `cafile=${path.join(workspace, "certs", "project-ca.pem")}`,
     "",
   ].join("\n");
   expect(readNpmPrefixConfigs()).toEqual([filteredConfig, filteredConfig]);
