@@ -307,25 +307,36 @@ function createInstallRoot(): string {
   return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
-function shouldCopyWorkspaceNpmConfigLine(line: string): boolean {
+function copyWorkspaceNpmConfigLine(workspace: string, line: string): string | null {
   const trimmedLine = line.trim();
   if (!trimmedLine || trimmedLine.startsWith("#") || trimmedLine.startsWith(";")) {
-    return false;
+    return null;
   }
 
   const separatorIndex = trimmedLine.indexOf("=");
   if (separatorIndex === -1) {
-    return false;
+    return null;
   }
 
   const rawKey = trimmedLine.slice(0, separatorIndex).trim();
   const key = rawKey.replace(/\[\]$/, "");
+  const rawValue = trimmedLine.slice(separatorIndex + 1).trim();
 
-  return (
+  if (key === "userconfig") {
+    if (!rawValue || rawValue.startsWith("~") || rawValue.includes("${")) {
+      return trimmedLine;
+    }
+
+    const userconfigPath = path.isAbsolute(rawValue) ? rawValue : path.join(workspace, rawValue);
+    return `${rawKey}=${userconfigPath}`;
+  }
+
+  const shouldCopy =
     INSTALL_NPM_CONFIG_KEYS.has(key) ||
     key.endsWith(":registry") ||
-    [...INSTALL_NPM_CONFIG_KEYS].some((configKey) => key.endsWith(`:${configKey}`))
-  );
+    [...INSTALL_NPM_CONFIG_KEYS].some((configKey) => key.endsWith(`:${configKey}`));
+
+  return shouldCopy ? trimmedLine : null;
 }
 
 function copyWorkspaceNpmConfig(installRoot: string): void {
@@ -341,7 +352,8 @@ function copyWorkspaceNpmConfig(installRoot: string): void {
 
   const configLines = readFileSync(npmrcPath, "utf8")
     .split(/\r?\n/)
-    .filter(shouldCopyWorkspaceNpmConfigLine);
+    .map((line) => copyWorkspaceNpmConfigLine(workspace, line))
+    .filter((line) => line !== null);
 
   if (configLines.length === 0) {
     return;

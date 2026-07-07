@@ -508,9 +508,11 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
       "registry=https://registry.example.test",
       "@internal:registry=https://registry.internal.example.test",
       "//registry.example.test/:_authToken=${NPM_TOKEN}",
+      "userconfig=.npmrc-ci",
       "bin-links=false",
       "package-lock=true",
     ].join("\n"),
+    ".npmrc-ci": "//registry.example.test/:_password=delegated\n",
   });
   const userconfigPath = path.join(createTempDir("setup-cli-userconfig-"), ".npmrc");
   writeFileSync(userconfigPath, "//registry.example.test/:username=existing\n");
@@ -535,6 +537,7 @@ test("runs npm from the caller workspace so project npm config is honored", asyn
       "registry=https://registry.example.test",
       "@internal:registry=https://registry.internal.example.test",
       "//registry.example.test/:_authToken=${NPM_TOKEN}",
+      `userconfig=${path.join(workspace, ".npmrc-ci")}`,
       "",
     ].join("\n"),
   ]);
