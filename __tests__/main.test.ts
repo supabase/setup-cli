@@ -1,5 +1,5 @@
 import { getCliPath, getDownloadArchive, getDownloadUrl } from '../src/utils'
-import { CLI_CONFIG_REGISTRY } from '../src/main'
+import { CLI_CONFIG_REGISTRY, shouldPinGhcrRegistry } from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
 import * as cp from 'child_process'
@@ -11,6 +11,16 @@ import { afterEach, expect, jest, test } from '@jest/globals'
 
 afterEach(() => {
   jest.restoreAllMocks()
+})
+
+test('pins GHCR for legacy CLI versions until registry fallback support', () => {
+  expect(shouldPinGhcrRegistry('1.28.0', undefined)).toBe(true)
+  expect(shouldPinGhcrRegistry('2.107.0', undefined)).toBe(true)
+  expect(shouldPinGhcrRegistry('2.108.0', undefined)).toBe(false)
+})
+
+test('preserves a configured image registry', () => {
+  expect(shouldPinGhcrRegistry('2.107.0', 'registry.example.test')).toBe(false)
 })
 
 test('gets download url to binary', async () => {
@@ -157,7 +167,5 @@ test('runs main action', () => {
       }
     })
     .toString()
-  expect
-    .stringContaining(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
-    .asymmetricMatch(stdout)
+  expect(stdout).toContain(`::set-env name=${CLI_CONFIG_REGISTRY}::ghcr.io`)
 })

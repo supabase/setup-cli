@@ -60567,6 +60567,11 @@ const determineInstalledVersion = async () => {
 };
 
 const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY';
+const REGISTRY_VERSION = '1.28.0';
+const FALLBACK_VERSION = '2.108.0';
+const shouldPinGhcrRegistry = (installedVersion, configuredRegistry) => !configuredRegistry &&
+    semverExports.gte(installedVersion, REGISTRY_VERSION) &&
+    semverExports.lt(installedVersion, FALLBACK_VERSION);
 /**
  * The main function for the action.
  *
@@ -60591,8 +60596,8 @@ async function run() {
         // Expose installed tool version
         const determinedVersion = await determineInstalledVersion();
         setOutput('version', determinedVersion);
-        // Use GHCR mirror by default
-        if (version.toLowerCase() === 'latest' || semverExports.gte(version, '1.28.0')) {
+        // Use GHCR for CLI versions without registry fallback support.
+        if (shouldPinGhcrRegistry(determinedVersion.replace(/^supabase\s+/i, '').replace(/^v/i, ''), process.env[CLI_CONFIG_REGISTRY])) {
             exportVariable(CLI_CONFIG_REGISTRY, 'ghcr.io');
         }
     }
