@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
+const DEFAULT_REGISTRY_FALLBACK_VERSION = "2.108.0";
 const VERSIONED_ARCHIVE_VERSION = "2.99.0";
 const DEFAULT_VERSION = "latest";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
@@ -328,7 +329,19 @@ export async function run(): Promise<void> {
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (version.toLowerCase() === "latest" || semver.order(version, REGISTRY_VERSION) >= 0) {
+    if (process.env[CLI_CONFIG_REGISTRY]?.trim()) {
+      return;
+    }
+
+    const installedVersionNumber = extractConcreteVersion(installedVersion);
+    if (!installedVersionNumber) {
+      throw new Error("Could not determine installed Supabase CLI version");
+    }
+
+    if (
+      semver.order(installedVersionNumber, REGISTRY_VERSION) >= 0 &&
+      semver.order(installedVersionNumber, DEFAULT_REGISTRY_FALLBACK_VERSION) === -1
+    ) {
       core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
     }
   } catch (error) {
