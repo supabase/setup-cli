@@ -1,6 +1,6 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
-import { gte } from 'semver'
+import { gte, lt } from 'semver'
 import {
   getDownloadArchive,
   determineInstalledVersion,
@@ -9,6 +9,16 @@ import {
 } from './utils.js'
 
 export const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
+const REGISTRY_VERSION = '1.28.0'
+const FALLBACK_VERSION = '2.108.0'
+
+export const shouldPinGhcrRegistry = (
+  installedVersion: string,
+  configuredRegistry: string | undefined
+): boolean =>
+  !configuredRegistry &&
+  gte(installedVersion, REGISTRY_VERSION) &&
+  lt(installedVersion, FALLBACK_VERSION)
 
 /**
  * The main function for the action.
@@ -47,8 +57,13 @@ export async function run(): Promise<void> {
     const determinedVersion = await determineInstalledVersion()
     core.setOutput('version', determinedVersion)
 
-    // Use GHCR mirror by default
-    if (version.toLowerCase() === 'latest' || gte(version, '1.28.0')) {
+    // Use GHCR for CLI versions without registry fallback support.
+    if (
+      shouldPinGhcrRegistry(
+        determinedVersion.replace(/^supabase\s+/i, '').replace(/^v/i, ''),
+        process.env[CLI_CONFIG_REGISTRY]
+      )
+    ) {
       core.exportVariable(CLI_CONFIG_REGISTRY, 'ghcr.io')
     }
   } catch (error) {

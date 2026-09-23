@@ -1,16 +1,19 @@
 import { getCliPath, getDownloadArchive, getDownloadUrl } from '../src/utils'
-import { CLI_CONFIG_REGISTRY } from '../src/main'
-import * as os from 'os'
-import * as process from 'process'
-import * as cp from 'child_process'
-import * as path from 'path'
-import * as fs from 'fs'
-import * as yaml from 'js-yaml'
-import * as url from 'url'
+import { shouldPinGhcrRegistry } from '../src/main'
 import { afterEach, expect, jest, test } from '@jest/globals'
 
 afterEach(() => {
   jest.restoreAllMocks()
+})
+
+test('pins GHCR for legacy CLI versions until registry fallback support', () => {
+  expect(shouldPinGhcrRegistry('1.28.0', undefined)).toBe(true)
+  expect(shouldPinGhcrRegistry('2.107.0', undefined)).toBe(true)
+  expect(shouldPinGhcrRegistry('2.108.0', undefined)).toBe(false)
+})
+
+test('preserves a configured image registry', () => {
+  expect(shouldPinGhcrRegistry('2.107.0', 'registry.example.test')).toBe(false)
 })
 
 test('gets download url to binary', async () => {
@@ -137,27 +140,4 @@ test('keeps unversioned archive url to binary before Supabase CLI v2.99.0', asyn
   expect(url).toContain('/download/v2.98.2/supabase_')
   expect(url).not.toContain('supabase_2.98.2_')
   expect(url).toMatch(/\.tar\.gz$/)
-})
-
-// shows how the runner will run a javascript action with env / stdout protocol
-test('runs main action', () => {
-  const { env, execPath } = process
-  const repo = path.dirname(path.dirname(url.fileURLToPath(import.meta.url)))
-  const config = path.join(repo, 'action.yml')
-  const action = yaml.load(fs.readFileSync(config, 'utf8')) as {
-    inputs: { version: { default: string } }
-  }
-  const ip = path.join(repo, 'dist', 'index.js')
-  const stdout = cp
-    .execFileSync(execPath, [ip], {
-      env: {
-        ...env,
-        RUNNER_TEMP: os.tmpdir(),
-        INPUT_VERSION: action.inputs.version.default
-      }
-    })
-    .toString()
-  expect
-    .stringContaining(`::set-env name=${CLI_CONFIG_REGISTRY}::`)
-    .asymmetricMatch(stdout)
 })
