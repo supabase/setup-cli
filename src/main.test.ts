@@ -12,6 +12,7 @@ const defaultEntrypoint = fileURLToPath(new URL("./main.ts", import.meta.url));
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/supabase/cli/releases/latest";
 const GITHUB_TOKEN_ENV = "SUPABASE_CLI_GITHUB_TOKEN";
+const originalCliConfigRegistry = process.env[CLI_CONFIG_REGISTRY];
 const originalWorkspace = process.env.GITHUB_WORKSPACE;
 const originalGithubToken = process.env[GITHUB_TOKEN_ENV];
 const tempDirs = new Set<string>();
@@ -24,6 +25,11 @@ afterEach(() => {
     delete process.env[GITHUB_TOKEN_ENV];
   } else {
     process.env[GITHUB_TOKEN_ENV] = originalGithubToken;
+  }
+  if (originalCliConfigRegistry === undefined) {
+    delete process.env[CLI_CONFIG_REGISTRY];
+  } else {
+    process.env[CLI_CONFIG_REGISTRY] = originalCliConfigRegistry;
   }
 
   for (const dir of tempDirs) {
@@ -512,6 +518,75 @@ test("explicit version overrides detected root lockfiles", async () => {
   await run();
 
   expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 1.0.0");
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("keeps the GHCR registry pin through Supabase CLI v2.107.x", async () => {
+  const cliDir = createFakeCli("supabase 2.107.9");
+  const spies = createActionSpies("2.107.9", cliDir, "/download/v2.107.9/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("keeps the GHCR registry pin starting with Supabase CLI v1.28.0", async () => {
+  const cliDir = createFakeCli("supabase 1.28.0");
+  const spies = createActionSpies("1.28.0", cliDir, "/download/v1.28.0/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("uses the CLI built-in registry fallback starting with Supabase CLI v2.108.0", async () => {
+  const cliDir = createFakeCli("supabase 2.108.0");
+  const spies = createActionSpies("2.108.0", cliDir, "/download/v2.108.0/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("preserves an explicitly configured internal image registry", async () => {
+  process.env[CLI_CONFIG_REGISTRY] = "registry.example.test";
+  const cliDir = createFakeCli("supabase 2.108.0");
+  const spies = createActionSpies("2.108.0", cliDir, "/download/v2.108.0/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(process.env[CLI_CONFIG_REGISTRY]).toBe("registry.example.test");
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+});
+
+test("preserves a whitespace-only internal image registry", async () => {
+  process.env[CLI_CONFIG_REGISTRY] = "  ";
+  const cliDir = createFakeCli("supabase 2.108.0");
+  const spies = createActionSpies("2.108.0", cliDir, "/download/v2.108.0/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(process.env[CLI_CONFIG_REGISTRY]).toBe("  ");
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+});
+
+test("uses the installed version to select the registry for latest", async () => {
+  mockLatestRelease("v2.108.0");
+  const cliDir = createFakeCli("supabase 2.108.0");
+  const spies = createActionSpies("latest", cliDir, "/download/v2.108.0/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
   expect(spies.exportVariable).not.toHaveBeenCalled();
   expect(spies.setFailed).not.toHaveBeenCalled();
 });
