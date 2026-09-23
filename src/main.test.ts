@@ -567,6 +567,18 @@ test("preserves an explicitly configured internal image registry", async () => {
   expect(spies.exportVariable).not.toHaveBeenCalled();
 });
 
+test("preserves a whitespace-only internal image registry", async () => {
+  process.env[CLI_CONFIG_REGISTRY] = "  ";
+  const cliDir = createFakeCli("supabase 2.108.0");
+  const spies = createActionSpies("2.108.0", cliDir, "/download/v2.108.0/supabase_");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(process.env[CLI_CONFIG_REGISTRY]).toBe("  ");
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+});
+
 test("uses the installed version to select the registry for latest", async () => {
   mockLatestRelease("v2.108.0");
   const cliDir = createFakeCli("supabase 2.108.0");

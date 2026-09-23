@@ -329,7 +329,7 @@ export async function run(): Promise<void> {
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (process.env[CLI_CONFIG_REGISTRY]?.trim()) {
+    if (process.env[CLI_CONFIG_REGISTRY]) {
       return;
     }
 
