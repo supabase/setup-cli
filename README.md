@@ -173,13 +173,30 @@ need to perform a few setup steps before you can work on the action.
 
 ## Publish
 
-1. Create a new GitHub release
-2. Rebase `v3` branch on `main`
+1. Create a new GitHub release tagged `v3.X.Y`, targeting the commit on `main`
+   you want to publish:
+
+   ```bash
+   gh release create v3.X.Y --target <merge-commit-sha> --title v3.X.Y --notes "..."
+   ```
+
+2. Wait for the tag's E2E workflow run to pass
+3. Move the `v3` major-version tag to that same commit:
+
+   ```bash
+   git fetch --force origin main --tags
+   git tag -f v3 <merge-commit-sha>
+   git push --force origin refs/tags/v3
+   ```
 
 Your action is now published! :rocket:
 
-See the
-[versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
+> [!NOTE]
+>
+> `v3` is a moving tag, not a branch — it always points at the latest
+> `v3.x.y` release, per the
+> [versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md).
+> `v1` and `v2` predate this convention and remain real branches.
 
 ## Validate
 
