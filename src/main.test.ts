@@ -10,6 +10,7 @@ const originalPath = process.env.PATH;
 const originalNpmUserconfig = process.env.NPM_CONFIG_USERCONFIG;
 const originalRunnerTemp = process.env.RUNNER_TEMP;
 const originalWorkspace = process.env.GITHUB_WORKSPACE;
+const originalImageRegistry = process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY;
 const tempDirs = new Set<string>();
 let mainModule: typeof import("./main.ts") | null = null;
 
@@ -21,8 +22,21 @@ afterEach(() => {
   } else {
     process.env.NPM_CONFIG_USERCONFIG = originalNpmUserconfig;
   }
-  process.env.RUNNER_TEMP = originalRunnerTemp;
-  process.env.GITHUB_WORKSPACE = originalWorkspace;
+  if (originalRunnerTemp === undefined) {
+    delete process.env.RUNNER_TEMP;
+  } else {
+    process.env.RUNNER_TEMP = originalRunnerTemp;
+  }
+  if (originalWorkspace === undefined) {
+    delete process.env.GITHUB_WORKSPACE;
+  } else {
+    process.env.GITHUB_WORKSPACE = originalWorkspace;
+  }
+  if (originalImageRegistry === undefined) {
+    delete process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY;
+  } else {
+    process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY = originalImageRegistry;
+  }
   delete process.env.FAKE_CLI_VERSION;
   delete process.env.FAKE_NPM_BIN;
   delete process.env.FAKE_NPM_INTEGRITY;
@@ -740,6 +754,41 @@ test("explicit version overrides detected root lockfiles", async () => {
 
   expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 1.1.6");
   expect(spies.exportVariable).not.toHaveBeenCalled();
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("pins legacy installed CLI versions to GHCR", async () => {
+  installFakeNpm("supabase 2.107.0");
+  const spies = createActionSpies("2.107.0");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("uses the CLI registry fallback for installed versions that support it", async () => {
+  installFakeNpm("supabase 2.108.0");
+  const spies = createActionSpies("latest");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+  expect(spies.setFailed).not.toHaveBeenCalled();
+});
+
+test("preserves an explicitly configured image registry for legacy CLI versions", async () => {
+  installFakeNpm("supabase 2.107.0");
+  process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY = "registry.example.test";
+  const spies = createActionSpies("2.107.0");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.exportVariable).not.toHaveBeenCalled();
+  expect(process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY).toBe("registry.example.test");
   expect(spies.setFailed).not.toHaveBeenCalled();
 });
 

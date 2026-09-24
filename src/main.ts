@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
+const FALLBACK_VERSION = "2.108.0";
 const DEFAULT_VERSION = "latest";
 const NPM_PACKAGE = "supabase";
 const NPM_EXECUTABLE_ENV = "SUPABASE_SETUP_CLI_NPM";
@@ -379,13 +380,13 @@ export async function determineInstalledVersion(cliPath: string): Promise<string
   return version;
 }
 
-function shouldUseGhcrRegistry(requestedVersion: string, installedVersion: string): boolean {
-  if (requestedVersion.toLowerCase() === DEFAULT_VERSION) {
-    return true;
-  }
-
+function shouldUseGhcrRegistry(installedVersion: string): boolean {
   const concreteVersion = extractConcreteVersion(installedVersion);
-  return concreteVersion !== null && semver.order(concreteVersion, REGISTRY_VERSION) >= 0;
+  return (
+    concreteVersion !== null &&
+    semver.order(concreteVersion, REGISTRY_VERSION) >= 0 &&
+    semver.order(concreteVersion, FALLBACK_VERSION) < 0
+  );
 }
 
 export async function run(): Promise<void> {
@@ -396,7 +397,7 @@ export async function run(): Promise<void> {
     core.setOutput("version", installedVersion);
     core.addPath(cliPath);
 
-    if (shouldUseGhcrRegistry(resolution.version, installedVersion)) {
+    if (shouldUseGhcrRegistry(installedVersion) && !process.env[CLI_CONFIG_REGISTRY]) {
       core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
     }
   } catch (error) {
