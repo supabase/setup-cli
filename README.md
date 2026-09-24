@@ -173,18 +173,18 @@ need to perform a few setup steps before you can work on the action.
 
 ## Publish
 
-1. Create a new GitHub release tagged `vX.Y.Z`, targeting the commit on `main`
+1. Create a new GitHub release tagged `v3.X.Y`, targeting the commit on `main`
    you want to publish:
 
    ```bash
-   gh release create vX.Y.Z --target <merge-commit-sha> --title vX.Y.Z --notes "..."
+   gh release create v3.X.Y --target <merge-commit-sha> --title v3.X.Y --notes "..."
    ```
 
 2. Wait for the tag's E2E workflow run to pass
 3. Move the `v3` major-version tag to that same commit:
 
    ```bash
-   git fetch origin main --tags
+   git fetch --force origin main --tags
    git tag -f v3 <merge-commit-sha>
    git push --force origin refs/tags/v3
    ```
