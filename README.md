@@ -174,7 +174,12 @@ need to perform a few setup steps before you can work on the action.
 ## Publish
 
 1. Create a new GitHub release tagged `vX.Y.Z`, targeting the commit on `main`
-   you want to publish
+   you want to publish:
+
+   ```bash
+   gh release create vX.Y.Z --target <merge-commit-sha> --title vX.Y.Z --notes "..."
+   ```
+
 2. Wait for the tag's E2E workflow run to pass
 3. Move the `v3` major-version tag to that same commit:
 
