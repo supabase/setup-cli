@@ -52,8 +52,11 @@ RUN apk add --no-cache libstdc++ libgcc nodejs npm
 USER 1000:1000
 ```
 
-A fixed npm-published version, `latest`, or `beta` of the `supabase` CLI can be
-installed:
+A fixed npm-published version, `latest`, `beta`, `next` (upcoming major
+prereleases), or `v<N>.stable` (maintenance line of an older major, like
+`v2.stable`) of the `supabase` CLI can be installed. `next` only tracks
+prereleases, so once a major goes GA it can lag behind `latest` until the
+following major's prereleases start:
 
 ```yaml
 steps:
@@ -67,6 +70,13 @@ steps:
   - uses: supabase/setup-cli@v3
     with:
       version: beta
+```
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: v2.stable
 ```
 
 Run `supabase db start` to execute all migrations on a fresh database:
@@ -87,9 +97,9 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                                                      | Default                           | Required |
-| --------- | ------ | ---------------------------------------------------------------- | --------------------------------- | -------- |
-| `version` | String | Supabase CLI `latest`, `beta`, or fixed version published to npm | Root lockfile version or `latest` | false    |
+| Name      | Type   | Description                                                                | Default                           | Required |
+| --------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, or fixed npm version | Root lockfile version or `latest` | false    |
 
 ## Advanced Usage
 
