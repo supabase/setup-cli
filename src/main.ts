@@ -12,7 +12,8 @@ const DEFAULT_VERSION = "latest";
 const NPM_PACKAGE = "supabase";
 const NPM_EXECUTABLE_ENV = "SUPABASE_SETUP_CLI_NPM";
 const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as const;
-const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta"]);
+const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta", "next"]);
+const MAINTENANCE_DIST_TAG_PATTERN = /^v\d+\.stable$/;
 const CONCRETE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const CONCRETE_VERSION_EXTRACT_PATTERN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
 
@@ -84,11 +85,17 @@ function normalizeVersion(version: string): string {
 }
 
 function normalizeSupportedVersion(version: string): string {
-  const normalizedVersion = normalizeVersion(version.trim());
-  const distTag = normalizedVersion.toLowerCase();
+  const trimmedVersion = version.trim();
+  const distTag = trimmedVersion.toLowerCase();
 
-  if (SUPPORTED_DIST_TAGS.has(distTag)) {
+  if (MAINTENANCE_DIST_TAG_PATTERN.test(distTag)) {
     return distTag;
+  }
+
+  const normalizedVersion = normalizeVersion(trimmedVersion);
+
+  if (SUPPORTED_DIST_TAGS.has(normalizedVersion.toLowerCase())) {
+    return normalizedVersion.toLowerCase();
   }
 
   if (CONCRETE_VERSION_PATTERN.test(normalizedVersion)) {
@@ -96,7 +103,7 @@ function normalizeSupportedVersion(version: string): string {
   }
 
   throw new Error(
-    `Unsupported Supabase CLI version "${version}". Use latest, beta, or a fixed npm package version like 2.101.0.`,
+    `Unsupported Supabase CLI version "${version}". Use latest, beta, next, v<N>.stable (like v2.stable), or a fixed npm package version like 2.101.0.`,
   );
 }
 

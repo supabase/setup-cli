@@ -374,12 +374,46 @@ test("uses an explicit npm dist-tag when provided", async () => {
   });
 });
 
+test("uses the next npm dist-tag when provided", async () => {
+  const { resolvePackage } = await getMainModule();
+
+  expect(resolvePackage("next")).toEqual({
+    spec: "supabase@next",
+    version: "next",
+  });
+});
+
+test("uses v<N>.stable maintenance dist-tags when provided", async () => {
+  const { resolvePackage } = await getMainModule();
+
+  expect(resolvePackage("v2.stable")).toEqual({
+    spec: "supabase@v2.stable",
+    version: "v2.stable",
+  });
+  expect(resolvePackage("v10.stable")).toEqual({
+    spec: "supabase@v10.stable",
+    version: "v10.stable",
+  });
+});
+
+test("uses a prerelease npm package version when provided", async () => {
+  const { resolvePackage } = await getMainModule();
+
+  expect(resolvePackage("3.0.0-next.4")).toEqual({
+    spec: "supabase@3.0.0-next.4",
+    version: "3.0.0-next.4",
+  });
+});
+
 test("rejects unsupported npm package selectors", async () => {
   const { resolvePackage } = await getMainModule();
 
-  expect(() => resolvePackage("hotfix")).toThrow(
-    'Unsupported Supabase CLI version "hotfix". Use latest, beta, or a fixed npm package version like 2.101.0.',
-  );
+  const message = (selector: string) =>
+    `Unsupported Supabase CLI version "${selector}". Use latest, beta, next, v<N>.stable (like v2.stable), or a fixed npm package version like 2.101.0.`;
+
+  for (const selector of ["hotfix", "v2", "2.x", "stable", "v2.stable.1", "next2", "2.stable"]) {
+    expect(() => resolvePackage(selector)).toThrow(message(selector));
+  }
 });
 
 test("uses the root bun.lock resolution when version is omitted", async () => {

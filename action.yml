@@ -3,7 +3,7 @@ description: Setup Supabase CLI, supabase, on GitHub Actions runners
 author: Supabase
 inputs:
   version:
-    description: Supabase CLI version to install. Supports latest, beta, or a fixed version published to npm. If omitted, detect from the root lockfile and otherwise use latest.
+    description: Supabase CLI version to install. Supports latest, beta, next (upcoming major prereleases), v<N>.stable (maintenance line of an older major, like v2.stable), or a fixed version published to npm. If omitted, detect from the root lockfile and otherwise use latest.
     required: false
 outputs:
   version:
