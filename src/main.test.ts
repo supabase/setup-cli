@@ -394,6 +394,10 @@ test("uses v<N>.stable maintenance dist-tags when provided", async () => {
     spec: "supabase@v10.stable",
     version: "v10.stable",
   });
+  expect(resolvePackage(" V2.Stable ")).toEqual({
+    spec: "supabase@v2.stable",
+    version: "v2.stable",
+  });
 });
 
 test("uses a prerelease npm package version when provided", async () => {

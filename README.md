@@ -54,7 +54,9 @@ USER 1000:1000
 
 A fixed npm-published version, `latest`, `beta`, `next` (upcoming major
 prereleases), or `v<N>.stable` (maintenance line of an older major, like
-`v2.stable`) of the `supabase` CLI can be installed:
+`v2.stable`) of the `supabase` CLI can be installed. `next` only tracks
+prereleases, so once a major goes GA it can lag behind `latest` until the
+following major's prereleases start:
 
 ```yaml
 steps:

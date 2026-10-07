@@ -50,8 +50,16 @@ To test the current beta release:
     version: beta
 ```
 
-To test upcoming major prereleases (`next`) or stay on the maintenance line of an
-older major (`v<N>.stable`):
+To test upcoming major prereleases, use `next`. It only tracks prereleases, so it
+can lag behind `latest` once a major goes GA:
+
+```yaml
+- uses: supabase/setup-cli@v3
+  with:
+    version: next
+```
+
+To stay on the maintenance line of an older major (`v<N>.stable`):
 
 ```yaml
 - uses: supabase/setup-cli@v3
