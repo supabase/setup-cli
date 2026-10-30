@@ -6,6 +6,9 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import * as core from "@actions/core";
 
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
+const RELEASES_URL = "https://github.com/supabase/cli/releases/download";
+const RELEASE_PLATFORM = process.platform === "win32" ? "windows" : process.platform;
+const RELEASE_ARCH = process.arch === "x64" ? "amd64" : process.arch;
 const originalPath = process.env.PATH;
 const originalNpmUserconfig = process.env.NPM_CONFIG_USERCONFIG;
 const originalRunnerTemp = process.env.RUNNER_TEMP;
@@ -46,6 +49,7 @@ afterEach(() => {
   delete process.env.FAKE_NPM_PACKAGE_VERSION;
   delete process.env.FAKE_NPM_PREFIX_CONFIG_LOG;
   delete process.env.FAKE_NPM_SCRIPTS;
+  delete process.env.FAKE_NPM_VIEW_ERROR;
   delete process.env.SETUP_CLI_TEST_WORKSPACE;
   delete process.env.SUPABASE_SETUP_CLI_NPM;
 
@@ -191,6 +195,11 @@ function recordConfig(configPath) {
 
 if (args[0] === "view") {
   recordConfig(path.join(process.cwd(), ".npmrc"));
+
+  if (process.env.FAKE_NPM_VIEW_ERROR) {
+    console.error(process.env.FAKE_NPM_VIEW_ERROR);
+    process.exit(1);
+  }
 
   const bin =
     process.env.FAKE_NPM_BIN === "missing"
@@ -345,7 +354,60 @@ function createActionSpies(inputVersion: string) {
     getInput: spyOn(core, "getInput").mockReturnValue(inputVersion),
     setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
     setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
+    warning: spyOn(core, "warning").mockImplementation(() => {}),
   };
+}
+
+function releaseUrl(version: string, filename: string): string {
+  return `${RELEASES_URL}/v${version}/${filename}`;
+}
+
+function createReleaseArchive(cliVersion: string, binDir = ""): Uint8Array {
+  const root = createTempDir("setup-cli-release-");
+  const contents = path.join(root, "contents");
+  const binPath = path.join(contents, binDir);
+  mkdirSync(binPath, { recursive: true });
+
+  if (process.platform === "win32") {
+    writeFileSync(path.join(binPath, "supabase.cmd"), `@echo off\r\necho ${cliVersion}\r\n`);
+  } else {
+    writeFileSync(
+      path.join(binPath, "supabase"),
+      `#!/usr/bin/env bash\nprintf '%s\\n' '${cliVersion}'\n`,
+      { mode: 0o755 },
+    );
+  }
+
+  const archivePath = path.join(root, "archive.tar.gz");
+  const tar = Bun.spawnSync(["tar", "-czf", archivePath, "-C", contents, "."]);
+  if (tar.exitCode !== 0) {
+    throw new Error(tar.stderr.toString());
+  }
+
+  return new Uint8Array(readFileSync(archivePath));
+}
+
+function sha256(bytes: Uint8Array): string {
+  return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+}
+
+function serveRelease(version: string, assets: Record<string, string | Uint8Array>) {
+  const requested: string[] = [];
+  const responses = new Map(
+    Object.entries(assets).map(([filename, body]) => [releaseUrl(version, filename), body]),
+  );
+
+  const respond = async (input: string | URL | Request) => {
+    const url = input instanceof Request ? input.url : String(input);
+    requested.push(url);
+    const body = responses.get(url);
+    return body === undefined ? new Response("Not Found", { status: 404 }) : new Response(body);
+  };
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(respond, { preconnect: globalThis.fetch.preconnect }),
+  );
+
+  return { requested };
 }
 
 async function getMainModule(): Promise<typeof import("./main.ts")> {
@@ -537,11 +599,12 @@ test("installs the CLI with npm into an isolated prefix", async () => {
   const logPath = installFakeNpm();
   const { installCli } = await getMainModule();
 
-  const cliPath = await installCli({
+  const { cliPath, source } = await installCli({
     spec: "supabase@2.101.0",
     version: "2.101.0",
   });
 
+  expect(source).toBe("npm");
   expect(cliPath).toContain(`${path.sep}node_modules${path.sep}.bin`);
   expect(readNpmCalls(logPath)).toEqual([
     viewMetadataCall("supabase@2.101.0"),
@@ -728,8 +791,9 @@ test("verifies lockfile integrity before installing", async () => {
   ]);
 });
 
-test("fails when lockfile integrity does not match the registry", async () => {
+test("fails without a GitHub release fallback when lockfile integrity does not match the registry", async () => {
   installFakeNpm("supabase 2.101.0", { integrity: "sha512-registry" });
+  const release = serveRelease("2.101.0", {});
   const { installCli } = await getMainModule();
 
   try {
@@ -744,6 +808,7 @@ test("fails when lockfile integrity does not match the registry", async () => {
       new Error("Lockfile integrity for supabase@2.101.0 does not match the npm registry"),
     );
   }
+  expect(release.requested).toEqual([]);
 });
 
 test("fails when the npm package does not expose a Supabase CLI executable", async () => {
@@ -775,6 +840,7 @@ test("runs the action with a package-lock resolution", async () => {
 
   expect(readNpmCalls(logPath)[0]).toEqual(viewMetadataCall("supabase@2.43.0"));
   expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.43.0");
+  expect(spies.setOutput).toHaveBeenCalledWith("install-source", "npm");
   expect(spies.addPath).toHaveBeenCalledWith(expect.stringContaining("node_modules"));
   expect(spies.exportVariable).toHaveBeenCalledWith(CLI_CONFIG_REGISTRY, "ghcr.io");
   expect(spies.setFailed).not.toHaveBeenCalled();
@@ -830,20 +896,151 @@ test("preserves an explicitly configured image registry for legacy CLI versions"
   expect(spies.setFailed).not.toHaveBeenCalled();
 });
 
-test("fails when the installed CLI does not report a version", async () => {
-  installFakeNpm("");
+test("installs the GitHub release when the npm-installed CLI cannot run", async () => {
+  installFakeNpm("", { packageVersion: "2.101.0" });
+  const archiveName = `supabase_2.101.0_${RELEASE_PLATFORM}_${RELEASE_ARCH}.tar.gz`;
+  const archive = createReleaseArchive("2.101.0");
+  const release = serveRelease("2.101.0", {
+    "checksums.txt": `${sha256(archive)}  ${archiveName}\n`,
+    [archiveName]: archive,
+  });
+  const spies = createActionSpies("2.101.0");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "2.101.0");
+  expect(spies.setOutput).toHaveBeenCalledWith("install-source", "github-release");
+  expect(spies.addPath).toHaveBeenCalledTimes(1);
+  expect(spies.warning).toHaveBeenCalledWith(
+    expect.stringContaining("installing v2.101.0 from its GitHub release instead"),
+  );
+  expect(release.requested).toEqual([
+    releaseUrl("2.101.0", "checksums.txt"),
+    releaseUrl("2.101.0", archiveName),
+  ]);
+});
+
+test("installs the GitHub release of a pinned version when npm is unreachable", async () => {
+  installFakeNpm("supabase 2.101.0");
+  process.env.FAKE_NPM_VIEW_ERROR = "npm error code ETIMEDOUT";
+  const archiveName = `supabase_2.101.0_${RELEASE_PLATFORM}_${RELEASE_ARCH}.tar.gz`;
+  const archive = createReleaseArchive("2.101.0");
+  serveRelease("2.101.0", {
+    "checksums.txt": `${sha256(archive)}  ${archiveName}\n`,
+    [archiveName]: archive,
+  });
+  const spies = createActionSpies("2.101.0");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(spies.setOutput).toHaveBeenCalledWith("install-source", "github-release");
+});
+
+test("fails without a GitHub release fallback when npm cannot resolve a dist-tag", async () => {
+  installFakeNpm("supabase 2.101.0");
+  process.env.FAKE_NPM_VIEW_ERROR = "npm error code ETIMEDOUT";
+  const release = serveRelease("2.101.0", {});
+  const spies = createActionSpies("latest");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).toHaveBeenCalledWith("npm error code ETIMEDOUT");
+  expect(release.requested).toEqual([]);
+});
+
+test("rejects a GitHub release archive that does not match its checksum", async () => {
+  installFakeNpm("", { packageVersion: "2.101.0" });
+  const archiveName = `supabase_2.101.0_${RELEASE_PLATFORM}_${RELEASE_ARCH}.tar.gz`;
+  serveRelease("2.101.0", {
+    "checksums.txt": `${"0".repeat(64)}  ${archiveName}\n`,
+    [archiveName]: createReleaseArchive("2.101.0"),
+  });
+  const spies = createActionSpies("2.101.0");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).toHaveBeenCalledWith(
+    expect.stringContaining(`Checksum mismatch for ${archiveName}`),
+  );
+  expect(spies.setOutput).not.toHaveBeenCalled();
+  expect(spies.addPath).not.toHaveBeenCalled();
+});
+
+test("reports both failures when the GitHub release fallback also fails", async () => {
+  installFakeNpm("", { packageVersion: "2.46.0" });
   process.env.GITHUB_WORKSPACE = createWorkspace({
     "package-lock.json": createPackageLock("2.46.0", "sha512-test"),
   });
+  serveRelease("2.46.0", {});
   const spies = createActionSpies("");
   const { run } = await getMainModule();
 
   await run();
 
   expect(spies.setFailed).toHaveBeenCalledWith(
-    "Could not determine installed Supabase CLI version",
+    "Could not determine installed Supabase CLI version\n" +
+      "The GitHub release fallback for v2.46.0 also failed: " +
+      "The v2.46.0 GitHub release has no checksums.txt or supabase_2.46.0_checksums.txt",
   );
   expect(spies.setOutput).not.toHaveBeenCalled();
   expect(spies.addPath).not.toHaveBeenCalled();
   expect(spies.exportVariable).not.toHaveBeenCalled();
+});
+
+test("selects the release archive that runs on the runner", async () => {
+  const { selectReleaseAsset } = await getMainModule();
+  const checksums = [
+    "aaa  supabase_3.0.0_linux_amd64.tar.gz",
+    "bbb  supabase_3.0.0_linux_amd64.apk",
+    "ccc  supabase_3.0.0_windows_arm64.tar.gz",
+  ].join("\n");
+
+  expect(
+    selectReleaseAsset("3.0.0", checksums, { platform: "linux", arch: "x64", musl: false }),
+  ).toEqual({
+    binDir: "",
+    filename: "supabase_3.0.0_linux_amd64.tar.gz",
+    sha256: "aaa",
+  });
+  expect(
+    selectReleaseAsset("3.0.0", checksums, { platform: "linux", arch: "x64", musl: true }),
+  ).toEqual({
+    binDir: path.join("usr", "bin"),
+    filename: "supabase_3.0.0_linux_amd64.apk",
+    sha256: "bbb",
+  });
+  expect(
+    selectReleaseAsset("3.0.0", checksums, { platform: "win32", arch: "arm64", musl: false })
+      .filename,
+  ).toBe("supabase_3.0.0_windows_arm64.tar.gz");
+});
+
+test("selects the unversioned archive from releases that predate versioned names", async () => {
+  const { selectReleaseAsset } = await getMainModule();
+
+  expect(
+    selectReleaseAsset("1.178.2", "ddd  supabase_darwin_arm64.tar.gz\n", {
+      platform: "darwin",
+      arch: "arm64",
+      musl: false,
+    }).filename,
+  ).toBe("supabase_darwin_arm64.tar.gz");
+});
+
+test("rejects runners that no release archive supports", async () => {
+  const { selectReleaseAsset } = await getMainModule();
+
+  expect(() =>
+    selectReleaseAsset("3.0.0", "aaa  supabase_3.0.0_linux_amd64.tar.gz", {
+      platform: "freebsd",
+      arch: "x64",
+      musl: false,
+    }),
+  ).toThrow("Supabase CLI releases have no binary for freebsd x64 runners");
 });

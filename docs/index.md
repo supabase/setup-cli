@@ -12,7 +12,9 @@ If `version` is omitted, the action checks the repository root for `bun.lock`,
 
 The action uses an existing Node.js/npm runtime when one is already available,
 and requires Node.js 20 or newer. On non-musl runners without Node.js or npm, it
-provisions them internally. Runners only need network access to the npm registry.
+provisions them internally. Runners need network access to the npm registry,
+and to GitHub when npm cannot install a working CLI and the action falls back to
+the version's GitHub release.
 
 ## Quick Start
 

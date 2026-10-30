@@ -38,6 +38,14 @@ and requires Node.js 20 or newer. On non-musl runners without Node.js or npm, it
 provisions them internally. Runners must be able to reach the npm registry to
 install the CLI package.
 
+If npm cannot install a working CLI for a resolved version, for example while a
+fresh release is still propagating through npm, the action logs a warning and
+installs the same version from its
+[GitHub release](https://github.com/supabase/cli/releases) instead, after
+verifying the download against the release's checksums. This needs a fixed
+version, either requested or resolved by npm, and is skipped when the lockfile
+integrity check fails.
+
 When running in Alpine or other Linux musl containers, the action uses Alpine's
 `nodejs` and `npm` packages instead of `actions/setup-node`, because the
 standard Node.js runner binaries target glibc. Root containers can have missing
@@ -100,6 +108,13 @@ The action supports the following inputs:
 | Name      | Type   | Description                                                                | Default                           | Required |
 | --------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
 | `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, or fixed npm version | Root lockfile version or `latest` | false    |
+
+## Outputs
+
+| Name             | Description                                                    |
+| ---------------- | -------------------------------------------------------------- |
+| `version`        | Version reported by the installed `supabase --version`         |
+| `install-source` | `npm`, or `github-release` when the action fell back to GitHub |
 
 ## Advanced Usage
 

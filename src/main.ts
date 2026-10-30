@@ -1,6 +1,6 @@
 import { semver } from "bun";
 import * as core from "@actions/core";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,18 @@ const FALLBACK_VERSION = "2.108.0";
 const DEFAULT_VERSION = "latest";
 const NPM_PACKAGE = "supabase";
 const NPM_EXECUTABLE_ENV = "SUPABASE_SETUP_CLI_NPM";
+const MUSL_ENV = "SUPABASE_SETUP_CLI_MUSL";
+const GITHUB_RELEASES_URL = "https://github.com/supabase/cli/releases/download";
+const RELEASE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+const RELEASE_PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
+  darwin: "darwin",
+  linux: "linux",
+  win32: "windows",
+};
+const RELEASE_ARCHES: Partial<Record<NodeJS.Architecture, string>> = {
+  arm64: "arm64",
+  x64: "amd64",
+};
 const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as const;
 const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta", "next"]);
 const MAINTENANCE_DIST_TAG_PATTERN = /^v\d+\.stable$/;
@@ -21,6 +33,24 @@ type PackageResolution = {
   spec: string;
   version: string;
   integrity?: string;
+};
+
+type Installation = {
+  cliPath: string;
+  installedVersion: string;
+  source: "npm" | "github-release";
+};
+
+type ReleaseTarget = {
+  platform: NodeJS.Platform;
+  arch: NodeJS.Architecture;
+  musl: boolean;
+};
+
+type ReleaseAsset = {
+  filename: string;
+  sha256: string;
+  binDir: string;
 };
 
 type PackageMetadata = {
@@ -271,7 +301,7 @@ async function getPackageMetadata(resolution: PackageResolution): Promise<Packag
   return metadata;
 }
 
-function verifyPackageMetadata(resolution: PackageResolution, metadata: PackageMetadata): void {
+function verifyPackageMetadata(resolution: PackageResolution, metadata: PackageMetadata): string {
   if (typeof metadata.version !== "string" || !CONCRETE_VERSION_PATTERN.test(metadata.version)) {
     throw new Error(`Could not resolve a fixed npm version for ${resolution.spec}`);
   }
@@ -283,6 +313,8 @@ function verifyPackageMetadata(resolution: PackageResolution, metadata: PackageM
   if (!hasSupabaseBin) {
     throw new Error(`The npm package ${resolution.spec} does not expose a supabase executable`);
   }
+
+  return metadata.version;
 }
 
 function shouldIgnoreInstallScripts(metadata: PackageMetadata): boolean {
@@ -299,10 +331,16 @@ function createInstallRoot(): string {
   return mkdtempSync(path.join(tempRoot, "setup-cli-"));
 }
 
-async function runNpm(args: string[]): Promise<string> {
-  const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
-  const proc = Bun.spawn([executable, ...args], {
-    cwd: process.env.GITHUB_WORKSPACE?.trim() ?? process.cwd(),
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function runProcess(
+  command: string[],
+  options: { cwd?: string; failure: string },
+): Promise<string> {
+  const proc = Bun.spawn(command, {
+    cwd: options.cwd,
     env: process.env,
     stderr: "pipe",
     stdout: "pipe",
@@ -314,18 +352,25 @@ async function runNpm(args: string[]): Promise<string> {
   ]);
 
   if (exitCode !== 0) {
-    throw new Error(stderr.trim() || `npm ${args.join(" ")} failed`);
+    throw new Error(stderr.trim() || options.failure);
   }
 
   return stdout;
 }
 
-export async function installCli(resolution: PackageResolution): Promise<string> {
-  const installRoot = createInstallRoot();
+async function runNpm(args: string[]): Promise<string> {
+  const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
+  return runProcess([executable, ...args], {
+    cwd: process.env.GITHUB_WORKSPACE?.trim() ?? process.cwd(),
+    failure: `npm ${args.join(" ")} failed`,
+  });
+}
 
-  const metadata = await getPackageMetadata(resolution);
-  verifyPackageMetadata(resolution, metadata);
-  verifyPackageIntegrity(resolution, metadata);
+async function installNpmPackage(
+  resolution: PackageResolution,
+  metadata: PackageMetadata,
+): Promise<string> {
+  const installRoot = createInstallRoot();
 
   await runNpm([
     "install",
@@ -343,6 +388,170 @@ export async function installCli(resolution: PackageResolution): Promise<string>
   ]);
 
   return path.join(installRoot, "node_modules", ".bin");
+}
+
+function parseChecksums(text: string): Map<string, string> {
+  const checksums = new Map<string, string>();
+
+  for (const line of text.split("\n")) {
+    const [sha256, filename] = line.trim().split(/\s+/);
+    if (sha256 && filename) {
+      checksums.set(filename.replace(/^\*/, ""), sha256.toLowerCase());
+    }
+  }
+
+  return checksums;
+}
+
+export function selectReleaseAsset(
+  version: string,
+  checksumsText: string,
+  target: ReleaseTarget,
+): ReleaseAsset {
+  const platform = RELEASE_PLATFORMS[target.platform];
+  const arch = RELEASE_ARCHES[target.arch];
+
+  if (!platform || !arch) {
+    throw new Error(
+      `Supabase CLI releases have no binary for ${target.platform} ${target.arch} runners`,
+    );
+  }
+
+  const tarballs = [
+    `supabase_${version}_${platform}_${arch}.tar.gz`,
+    `supabase_${platform}_${arch}.tar.gz`,
+  ];
+  // Release tarballs may carry a glibc build; the apk carries the musl one.
+  const candidates =
+    target.musl && platform === "linux"
+      ? [`supabase_${version}_${platform}_${arch}.apk`, ...tarballs]
+      : tarballs;
+  const checksums = parseChecksums(checksumsText);
+
+  for (const filename of candidates) {
+    const sha256 = checksums.get(filename);
+    if (sha256) {
+      return {
+        filename,
+        sha256,
+        binDir: filename.endsWith(".apk") ? path.join("usr", "bin") : "",
+      };
+    }
+  }
+
+  throw new Error(`The v${version} release has no checksum for ${candidates.join(" or ")}`);
+}
+
+async function fetchReleaseAsset(version: string, filename: string): Promise<Response> {
+  const url = `${GITHUB_RELEASES_URL}/v${version}/${filename}`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(RELEASE_DOWNLOAD_TIMEOUT_MS) });
+
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Downloading ${url} returned HTTP ${response.status}`);
+  }
+
+  return response;
+}
+
+async function downloadReleaseChecksums(version: string): Promise<string> {
+  const filenames = ["checksums.txt", `supabase_${version}_checksums.txt`];
+
+  for (const filename of filenames) {
+    const response = await fetchReleaseAsset(version, filename);
+    if (response.ok) {
+      return response.text();
+    }
+  }
+
+  throw new Error(`The v${version} GitHub release has no ${filenames.join(" or ")}`);
+}
+
+async function extractArchive(archivePath: string, destination: string): Promise<void> {
+  // Git Bash's GNU tar reads `C:\...` as a remote host, so Windows uses its bundled bsdtar.
+  const tar =
+    process.platform === "win32"
+      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+
+  await runProcess([tar, "-xzf", archivePath, "-C", destination], {
+    failure: `Could not extract ${path.basename(archivePath)}`,
+  });
+}
+
+async function installGitHubRelease(version: string): Promise<string> {
+  const asset = selectReleaseAsset(version, await downloadReleaseChecksums(version), {
+    platform: process.platform,
+    arch: process.arch,
+    musl: process.env[MUSL_ENV] === "true",
+  });
+  const response = await fetchReleaseAsset(version, asset.filename);
+  if (!response.ok) {
+    throw new Error(`The v${version} GitHub release has no ${asset.filename}`);
+  }
+
+  const archive = new Uint8Array(await response.arrayBuffer());
+  const sha256 = new Bun.CryptoHasher("sha256").update(archive).digest("hex");
+
+  if (sha256 !== asset.sha256) {
+    throw new Error(
+      `Checksum mismatch for ${asset.filename}: the release lists ${asset.sha256}, but the download is ${sha256}`,
+    );
+  }
+
+  const installRoot = createInstallRoot();
+  const archivePath = path.join(installRoot, asset.filename);
+  await Bun.write(archivePath, archive);
+  await extractArchive(archivePath, installRoot);
+  rmSync(archivePath, { force: true });
+
+  return path.join(installRoot, asset.binDir);
+}
+
+async function installGitHubReleaseInstead(
+  resolution: PackageResolution,
+  version: string | null,
+  npmError: unknown,
+): Promise<Installation> {
+  if (!version) {
+    throw npmError;
+  }
+
+  const npmFailure = errorMessage(npmError);
+  core.warning(
+    `npm could not install ${resolution.spec}, so installing v${version} from its GitHub release instead: ${npmFailure}`,
+  );
+
+  try {
+    const cliPath = await installGitHubRelease(version);
+    const installedVersion = await determineInstalledVersion(cliPath);
+    return { cliPath, installedVersion, source: "github-release" };
+  } catch (error) {
+    throw new Error(
+      `${npmFailure}\nThe GitHub release fallback for v${version} also failed: ${errorMessage(error)}`,
+    );
+  }
+}
+
+/** Installs from npm, falling back to the GitHub release when npm cannot produce a working CLI. */
+export async function installCli(resolution: PackageResolution): Promise<Installation> {
+  let metadata: PackageMetadata;
+  try {
+    metadata = await getPackageMetadata(resolution);
+  } catch (error) {
+    const version = CONCRETE_VERSION_PATTERN.test(resolution.version) ? resolution.version : null;
+    return installGitHubReleaseInstead(resolution, version, error);
+  }
+
+  const version = verifyPackageMetadata(resolution, metadata);
+  verifyPackageIntegrity(resolution, metadata);
+
+  try {
+    const cliPath = await installNpmPackage(resolution, metadata);
+    const installedVersion = await determineInstalledVersion(cliPath);
+    return { cliPath, installedVersion, source: "npm" };
+  } catch (error) {
+    return installGitHubReleaseInstead(resolution, version, error);
+  }
 }
 
 function getCliExecutablePath(cliPath: string): string {
@@ -364,24 +573,13 @@ function getCliExecutablePath(cliPath: string): string {
 }
 
 export async function determineInstalledVersion(cliPath: string): Promise<string> {
-  const executable = getCliExecutablePath(cliPath);
-  const proc = Bun.spawn([executable, "--version"], {
-    stderr: "pipe",
-    stdout: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const failure = "Could not determine installed Supabase CLI version";
+  const version = (
+    await runProcess([getCliExecutablePath(cliPath), "--version"], { failure })
+  ).trim();
 
-  if (exitCode !== 0) {
-    throw new Error(stderr.trim() || "Could not determine installed Supabase CLI version");
-  }
-
-  const version = stdout.trim();
   if (!version) {
-    throw new Error("Could not determine installed Supabase CLI version");
+    throw new Error(failure);
   }
 
   return version;
@@ -399,16 +597,16 @@ function shouldUseGhcrRegistry(installedVersion: string): boolean {
 export async function run(): Promise<void> {
   try {
     const resolution = resolvePackage(core.getInput("version"));
-    const cliPath = await installCli(resolution);
-    const installedVersion = await determineInstalledVersion(cliPath);
+    const { cliPath, installedVersion, source } = await installCli(resolution);
     core.setOutput("version", installedVersion);
+    core.setOutput("install-source", source);
     core.addPath(cliPath);
 
     if (shouldUseGhcrRegistry(installedVersion) && !process.env[CLI_CONFIG_REGISTRY]) {
       core.exportVariable(CLI_CONFIG_REGISTRY, "ghcr.io");
     }
   } catch (error) {
-    core.setFailed(error instanceof Error ? error.message : String(error));
+    core.setFailed(errorMessage(error));
   }
 }
 
