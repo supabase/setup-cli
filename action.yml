@@ -9,6 +9,9 @@ outputs:
   version:
     description: Version of installed Supabase CLI
     value: ${{ steps.setup-cli.outputs.version }}
+  install-source:
+    description: Where the CLI was installed from, either npm or github-release when npm could not install a working CLI.
+    value: ${{ steps.setup-cli.outputs.install-source }}
 runs:
   using: composite
   steps:
@@ -178,4 +181,5 @@ runs:
       working-directory: ${{ github.action_path }}
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        SUPABASE_SETUP_CLI_MUSL: ${{ steps.bun-download.outputs.is-musl }}
       run: bun src/main.ts

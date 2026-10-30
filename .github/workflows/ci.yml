@@ -54,15 +54,47 @@ jobs:
           version: ${{ matrix.version }}
       - run: supabase -h
 
+  github-release-fallback:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        # 2.33.0 predates versioned archive names; 2.122.0 uses them.
+        version: [2.33.0, 2.122.0]
+    env:
+      # An npm executable that does not exist makes every npm call fail.
+      SUPABASE_SETUP_CLI_NPM: setup-cli-npm-unavailable
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: setup-cli
+        uses: ./
+        with:
+          version: ${{ matrix.version }}
+      - env:
+          INSTALL_SOURCE: ${{ steps.setup-cli.outputs.install-source }}
+          INSTALLED_VERSION: ${{ steps.setup-cli.outputs.version }}
+          EXPECTED_VERSION: ${{ matrix.version }}
+        run: |
+          [[ "$INSTALL_SOURCE" == "github-release" ]]
+          [[ "$INSTALLED_VERSION" == "$EXPECTED_VERSION" ]]
+          supabase -h
+
   ci:
     if: ${{ always() && github.event_name == 'pull_request' }}
     name: CI
     runs-on: ubuntu-latest
-    needs: [validate, test]
+    needs: [validate, test, github-release-fallback]
     timeout-minutes: 5
     steps:
       - run: |
           validate_result="${{ needs.validate.result }}"
           test_result="${{ needs.test.result }}"
+          fallback_result="${{ needs.github-release-fallback.result }}"
           [[ "$validate_result" == "success" || "$validate_result" == "skipped" ]]
           [[ "$test_result" == "success" || "$test_result" == "skipped" ]]
+          [[ "$fallback_result" == "success" || "$fallback_result" == "skipped" ]]
