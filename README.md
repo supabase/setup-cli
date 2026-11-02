@@ -196,6 +196,62 @@ steps:
   - run: bun test
 ```
 
+## Faster local stack (experimental)
+
+Supabase CLI v3 includes an experimental local stack that starts much faster
+than the default one. On `ubuntu-latest`, it answers API requests
+about 20s after `supabase start`, compared to about 85s for the default stack
+([benchmark](https://github.com/jgoux/setup-cli-testing/actions/runs/41458685893)).
+
+Enable it in `supabase/config.toml`:
+
+```toml
+[experimental]
+stack = true
+```
+
+Without a `config.toml`, set `SUPABASE_EXPERIMENTAL_STACK=1` for the job
+instead. `supabase init` is not needed: `supabase start` runs the stack with
+default settings.
+
+Then start it and export its env vars for your tests:
+
+```yaml
+steps:
+  - uses: actions/checkout@v6
+  - uses: supabase/setup-cli@v3
+    with:
+      version: ^3
+  - run: supabase start
+  - name: Export local Supabase env vars
+    run: |
+      supabase status --env \
+        --override-name API_URL=SUPABASE_URL \
+        --override-name SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY \
+        >> .env.test
+  - run: bun test
+```
+
+- `supabase start` runs the stack on Docker when it is available. On runners
+  without Docker, such as `macos-latest`, use `supabase start --runtime native`
+  (see the
+  [native runtime requirements](https://supabase.com/docs/guides/local-development/docker-and-native-runtimes#native-runtime-requirements)).
+- Ports that `config.toml` doesn't set are picked per project, so read URLs
+  and keys from `supabase status --env` instead of hard-coding
+  `127.0.0.1:54321`. Ports a config sets explicitly, like those written by
+  `supabase init` before the stack was enabled, are used as is, and
+  `supabase start` fails if one is taken.
+  [Remove them](https://supabase.com/docs/guides/local-development/running-multiple-local-projects#remove-fixed-ports-from-configtoml)
+  to let the stack pick free ports.
+- With a `config.toml`, commit the `supabase/supabase.lock` that
+  `supabase start` writes. It pins the services the stack downloads, and when
+  `CI` is set, `supabase start` fails instead of updating an out-of-date lock.
+- `supabase start` rejects some settings the stack does not support yet, such
+  as `api.tls` or a `db.major_version` other than 15 or 17.
+- Services other than Postgres start on their first request.
+- Caching the downloaded services between runs is not needed: restoring them
+  from the Actions cache takes about as long as downloading them.
+
 ## Develop
 
 After you've cloned the repository to your local machine or codespace, you'll
