@@ -38,6 +38,14 @@ and requires Node.js 20 or newer. On non-musl runners without Node.js or npm, it
 provisions them internally. Runners must be able to reach the npm registry to
 install the CLI package.
 
+If npm cannot install a working CLI for a resolved version, for example while a
+fresh release is still propagating through npm, the action logs a warning and
+installs the same version from its
+[GitHub release](https://github.com/supabase/cli/releases) instead, after
+verifying the download against the release's checksums. This needs a fixed
+version, either requested or resolved by npm, and is skipped when the lockfile
+integrity check fails.
+
 When running in Alpine or other Linux musl containers, the action uses Alpine's
 `nodejs` and `npm` packages instead of `actions/setup-node`, because the
 standard Node.js runner binaries target glibc. Root containers can have missing
@@ -52,8 +60,11 @@ RUN apk add --no-cache libstdc++ libgcc nodejs npm
 USER 1000:1000
 ```
 
-A fixed npm-published version, `latest`, or `beta` of the `supabase` CLI can be
-installed:
+A fixed npm-published version, `latest`, `beta`, `next` (upcoming major
+prereleases), or `v<N>.stable` (maintenance line of an older major, like
+`v2.stable`) of the `supabase` CLI can be installed. `next` only tracks
+prereleases, so once a major goes GA it can lag behind `latest` until the
+following major's prereleases start:
 
 ```yaml
 steps:
@@ -67,6 +78,13 @@ steps:
   - uses: supabase/setup-cli@v3
     with:
       version: beta
+```
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: v2.stable
 ```
 
 Run `supabase db start` to execute all migrations on a fresh database:
@@ -87,9 +105,16 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                                                      | Default                           | Required |
-| --------- | ------ | ---------------------------------------------------------------- | --------------------------------- | -------- |
-| `version` | String | Supabase CLI `latest`, `beta`, or fixed version published to npm | Root lockfile version or `latest` | false    |
+| Name      | Type   | Description                                                                | Default                           | Required |
+| --------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, or fixed npm version | Root lockfile version or `latest` | false    |
+
+## Outputs
+
+| Name             | Description                                                    |
+| ---------------- | -------------------------------------------------------------- |
+| `version`        | Version reported by the installed `supabase --version`         |
+| `install-source` | `npm`, or `github-release` when the action fell back to GitHub |
 
 ## Advanced Usage
 
@@ -173,13 +198,30 @@ need to perform a few setup steps before you can work on the action.
 
 ## Publish
 
-1. Create a new GitHub release
-2. Rebase `v3` branch on `main`
+1. Create a new GitHub release tagged `v3.X.Y`, targeting the commit on `main`
+   you want to publish:
+
+   ```bash
+   gh release create v3.X.Y --target <merge-commit-sha> --title v3.X.Y --notes "..."
+   ```
+
+2. Wait for the tag's E2E workflow run to pass
+3. Move the `v3` major-version tag to that same commit:
+
+   ```bash
+   git fetch --force origin main --tags
+   git tag -f v3 <merge-commit-sha>
+   git push --force origin refs/tags/v3
+   ```
 
 Your action is now published! :rocket:
 
-See the
-[versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
+> [!NOTE]
+>
+> `v3` is a moving tag, not a branch — it always points at the latest
+> `v3.x.y` release, per the
+> [versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md).
+> `v1` and `v2` predate this convention and remain real branches.
 
 ## Validate
 

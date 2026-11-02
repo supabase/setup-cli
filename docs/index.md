@@ -12,7 +12,9 @@ If `version` is omitted, the action checks the repository root for `bun.lock`,
 
 The action uses an existing Node.js/npm runtime when one is already available,
 and requires Node.js 20 or newer. On non-musl runners without Node.js or npm, it
-provisions them internally. Runners only need network access to the npm registry.
+provisions them internally. Runners need network access to the npm registry,
+and to GitHub when npm cannot install a working CLI and the action falls back to
+the version's GitHub release.
 
 ## Quick Start
 
@@ -48,6 +50,23 @@ To test the current beta release:
 - uses: supabase/setup-cli@v3
   with:
     version: beta
+```
+
+To test upcoming major prereleases, use `next`. It only tracks prereleases, so it
+can lag behind `latest` once a major goes GA:
+
+```yaml
+- uses: supabase/setup-cli@v3
+  with:
+    version: next
+```
+
+To stay on the maintenance line of an older major (`v<N>.stable`):
+
+```yaml
+- uses: supabase/setup-cli@v3
+  with:
+    version: v2.stable
 ```
 
 ## Resources
