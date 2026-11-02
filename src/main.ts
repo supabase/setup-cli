@@ -27,6 +27,8 @@ const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as co
 const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta", "next"]);
 const MAINTENANCE_DIST_TAG_PATTERN = /^v\d+\.stable$/;
 const CONCRETE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const RANGE_TOKEN_PATTERN =
+  /^(?:[<>]=?|=|\^|~)?(?:\d+|[xX*])(?:\.(?:\d+|[xX*])){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const CONCRETE_VERSION_EXTRACT_PATTERN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
 
 type PackageResolution = {
@@ -58,6 +60,8 @@ type PackageMetadata = {
   bin?: unknown;
   scripts?: unknown;
   "dist.integrity"?: unknown;
+  "dist-tags"?: unknown;
+  deprecated?: unknown;
 };
 
 type BunLock = {
@@ -114,6 +118,28 @@ function normalizeVersion(version: string): string {
   return version.replace(/^v/i, "");
 }
 
+/** Joins operators to their versions and drops `v` prefixes, which npm only accepts in lowercase. */
+function normalizeRange(version: string): string {
+  return version.replace(/([<>]=?|=|\^|~)\s+/g, "$1").replace(/(^|[\s<>=^~])v(?=\d|[xX*])/gi, "$1");
+}
+
+/** Recognizes npm semver ranges (^2.95, 2.x, >=2.98 <2.99, 2.90.0 - 2.98.0, ^1 || ^2) by syntax. */
+function isVersionRange(version: string): boolean {
+  if (CONCRETE_VERSION_PATTERN.test(version)) {
+    return false;
+  }
+
+  return version.split("||").every((clause) => {
+    const tokens = clause.split(/\s+/).filter(Boolean);
+    return (
+      tokens.length > 0 &&
+      tokens[0] !== "-" &&
+      tokens[tokens.length - 1] !== "-" &&
+      tokens.every((token) => token === "-" || RANGE_TOKEN_PATTERN.test(token))
+    );
+  });
+}
+
 function normalizeSupportedVersion(version: string): string {
   const trimmedVersion = version.trim();
   const distTag = trimmedVersion.toLowerCase();
@@ -132,8 +158,13 @@ function normalizeSupportedVersion(version: string): string {
     return normalizedVersion;
   }
 
+  const range = normalizeRange(trimmedVersion);
+  if (isVersionRange(range)) {
+    return range;
+  }
+
   throw new Error(
-    `Unsupported Supabase CLI version "${version}". Use latest, beta, next, v<N>.stable (like v2.stable), or a fixed npm package version like 2.101.0.`,
+    `Unsupported Supabase CLI version "${version}". Use latest, beta, next, v<N>.stable (like v2.stable), a fixed npm package version like 2.101.0, or a semver range like ^2.95 or 2.x.`,
   );
 }
 
@@ -281,6 +312,30 @@ function verifyPackageIntegrity(resolution: PackageResolution, metadata: Package
   }
 }
 
+function isDeprecated(manifest: PackageMetadata): boolean {
+  return Boolean(manifest.deprecated);
+}
+
+/** Picks a manifest like npm's installer: `latest` if it matches, else the highest non-deprecated version. */
+function pickManifest(manifests: PackageMetadata[]): PackageMetadata | undefined {
+  const candidates = manifests.filter(
+    (manifest) =>
+      typeof manifest.version === "string" && CONCRETE_VERSION_PATTERN.test(manifest.version),
+  );
+  const distTags = manifests.map((manifest) => manifest["dist-tags"]).find(isRecord);
+  const latest = candidates.find((manifest) => manifest.version === distTags?.latest);
+
+  if (latest && !isDeprecated(latest)) {
+    return latest;
+  }
+
+  const nonDeprecated = candidates.filter((manifest) => !isDeprecated(manifest));
+  const pool = nonDeprecated.length > 0 ? nonDeprecated : candidates;
+  const [highest] = pool.sort((a, b) => semver.order(b.version as string, a.version as string));
+
+  return highest;
+}
+
 async function getPackageMetadata(resolution: PackageResolution): Promise<PackageMetadata> {
   const output = await runNpm([
     "view",
@@ -289,16 +344,22 @@ async function getPackageMetadata(resolution: PackageResolution): Promise<Packag
     "bin",
     "scripts",
     "dist.integrity",
+    "deprecated",
+    "dist-tags",
     "--json",
     "--offline=false",
   ]);
-  const metadata = JSON.parse(output) as unknown;
+  const parsed = JSON.parse(output) as unknown;
+  const manifests = (Array.isArray(parsed) ? parsed : [parsed]).filter(isRecord);
 
-  if (!isRecord(metadata)) {
+  const [first] = manifests;
+
+  if (!first) {
     throw new Error(`Could not read npm metadata for ${resolution.spec}`);
   }
 
-  return metadata;
+  // Without a concrete version, verifyPackageMetadata rejects the manifest with a clear error.
+  return pickManifest(manifests) ?? first;
 }
 
 function verifyPackageMetadata(resolution: PackageResolution, metadata: PackageMetadata): string {
@@ -512,11 +573,15 @@ async function installGitHubReleaseInstead(
   version: string | null,
   npmError: unknown,
 ): Promise<Installation> {
+  const npmFailure = errorMessage(npmError);
+
   if (!version) {
+    if (/No match found for version/.test(npmFailure)) {
+      throw new Error(`No published Supabase CLI version matches "${resolution.version}"`);
+    }
     throw npmError;
   }
 
-  const npmFailure = errorMessage(npmError);
   core.warning(
     `npm could not install ${resolution.spec}, so installing v${version} from its GitHub release instead: ${npmFailure}`,
   );
@@ -533,17 +598,23 @@ async function installGitHubReleaseInstead(
 }
 
 /** Installs from npm, falling back to the GitHub release when npm cannot produce a working CLI. */
-export async function installCli(resolution: PackageResolution): Promise<Installation> {
+export async function installCli(requested: PackageResolution): Promise<Installation> {
   let metadata: PackageMetadata;
   try {
-    metadata = await getPackageMetadata(resolution);
+    metadata = await getPackageMetadata(requested);
   } catch (error) {
-    const version = CONCRETE_VERSION_PATTERN.test(resolution.version) ? resolution.version : null;
-    return installGitHubReleaseInstead(resolution, version, error);
+    const version = CONCRETE_VERSION_PATTERN.test(requested.version) ? requested.version : null;
+    return installGitHubReleaseInstead(requested, version, error);
   }
 
-  const version = verifyPackageMetadata(resolution, metadata);
-  verifyPackageIntegrity(resolution, metadata);
+  const version = verifyPackageMetadata(requested, metadata);
+  verifyPackageIntegrity(requested, metadata);
+
+  if (version !== requested.version) {
+    core.info(`Resolved Supabase CLI version "${requested.version}" to ${version}`);
+  }
+
+  const resolution = { ...requested, spec: `${NPM_PACKAGE}@${version}`, version };
 
   try {
     const cliPath = await installNpmPackage(resolution, metadata);

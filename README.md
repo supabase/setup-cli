@@ -18,6 +18,26 @@ This action can be run on `ubuntu-latest`, `windows-latest`, and `macos-latest`
 GitHub Actions runners, and will install and expose a specified version of the
 `supabase` CLI on the runner environment.
 
+## Upgrading from v1 or v2
+
+`supabase/setup-cli@v1` and `@v2` are legacy and only receive compatibility
+fixes. New features, such as semver ranges in `version`, are only available in
+`@v3`. Upgrading the action does not force a CLI upgrade: `@v3` installs any
+published CLI version, so you can keep an older CLI with an exact version or a
+range like `^1` or `^2`:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: ^2
+```
+
+`@v3` installs the CLI from npm, so runners need Node.js 20+ (provisioned
+automatically when missing) and access to the npm registry. `@v1` defaulted to
+CLI `2.20.3`; `@v3` defaults to the version in your root lockfile, or `latest`
+when there is none, so set `version` explicitly to keep a specific CLI.
+
 ## Usage
 
 Setup the `supabase` CLI:
@@ -61,10 +81,12 @@ USER 1000:1000
 ```
 
 A fixed npm-published version, `latest`, `beta`, `next` (upcoming major
-prereleases), or `v<N>.stable` (maintenance line of an older major, like
-`v2.stable`) of the `supabase` CLI can be installed. `next` only tracks
-prereleases, so once a major goes GA it can lag behind `latest` until the
-following major's prereleases start:
+prereleases), `v<N>.stable` (maintenance line of an older major, like
+`v2.stable`), or an npm semver range (like `^2.95`, `~2.98.0`, `2.x`,
+`>=2.98 <2.99`, or `^1 || ^2`) of the `supabase` CLI can be installed. A range
+installs the version npm picks: `latest` if it matches, otherwise the highest
+non-deprecated match. `next` only tracks prereleases, so once a major goes GA
+it can lag behind `latest` until the following major's prereleases start:
 
 ```yaml
 steps:
@@ -87,6 +109,13 @@ steps:
       version: v2.stable
 ```
 
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: ^2.95
+```
+
 Run `supabase db start` to execute all migrations on a fresh database:
 
 ```yaml
@@ -105,9 +134,9 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                                                                | Default                           | Required |
-| --------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
-| `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, or fixed npm version | Root lockfile version or `latest` | false    |
+| Name      | Type   | Description                                                                              | Default                           | Required |
+| --------- | ------ | ---------------------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, fixed npm version, or semver range | Root lockfile version or `latest` | false    |
 
 ## Outputs
 
