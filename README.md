@@ -232,13 +232,20 @@ steps:
   - run: bun test
 ```
 
-- The native runtime needs Linux with glibc 2.35+ (`ubuntu-22.04` or later) or
-  macOS 14+ on Apple silicon. Without `--runtime`, the stack uses Docker when
-  it is available, which is about as fast on `ubuntu-latest`.
+- The native runtime needs Linux on amd64 or arm64 with glibc 2.35+
+  (`ubuntu-22.04` or later), or macOS 14+ on Apple silicon. It doesn't run as
+  root: in a root CI container, set `SUPABASE_NATIVE_POSTGRES_USER` to a
+  non-root account. See the
+  [native runtime requirements](https://supabase.com/docs/guides/local-development/docker-and-native-runtimes#native-runtime-requirements).
+  Without `--runtime`, the stack uses Docker when it is available, which is
+  about as fast on `ubuntu-latest`.
 - Ports that `config.toml` doesn't set are picked per project, so read URLs
   and keys from `supabase status --env` instead of hard-coding
   `127.0.0.1:54321`. Ports a config sets explicitly, like those written by
-  `supabase init` before the stack was enabled, are kept as is.
+  `supabase init` before the stack was enabled, are used as is, and
+  `supabase start` fails if one is taken.
+  [Remove them](https://supabase.com/docs/guides/local-development/running-multiple-local-projects#remove-fixed-ports-from-configtoml)
+  to let the stack pick free ports.
 - With a `config.toml`, commit the `supabase/supabase.lock` that
   `supabase start` writes. It pins the services the stack downloads, and when
   `CI` is set, `supabase start` fails instead of updating an out-of-date lock.
