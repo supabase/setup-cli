@@ -18,6 +18,26 @@ This action can be run on `ubuntu-latest`, `windows-latest`, and `macos-latest`
 GitHub Actions runners, and will install and expose a specified version of the
 `supabase` CLI on the runner environment.
 
+## Upgrading from v1 or v2
+
+`supabase/setup-cli@v1` and `@v2` are legacy and only receive compatibility
+fixes. New features, such as semver ranges in `version`, are only available in
+`@v3`. Upgrading the action does not force a CLI upgrade: `@v3` installs any
+published CLI version, so you can keep an older CLI with an exact version or a
+range like `^1` or `^2`:
+
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: ^2
+```
+
+`@v3` installs the CLI from npm, so runners need Node.js 20+ (provisioned
+automatically when missing) and access to the npm registry. `@v1` defaulted to
+CLI `2.20.3`; `@v3` defaults to the version in your root lockfile, or `latest`
+when there is none, so set `version` explicitly to keep a specific CLI.
+
 ## Usage
 
 Setup the `supabase` CLI:
