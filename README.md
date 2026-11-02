@@ -61,8 +61,10 @@ USER 1000:1000
 ```
 
 A fixed npm-published version, `latest`, `beta`, `next` (upcoming major
-prereleases), or `v<N>.stable` (maintenance line of an older major, like
-`v2.stable`) of the `supabase` CLI can be installed. `next` only tracks
+prereleases), `v<N>.stable` (maintenance line of an older major, like
+`v2.stable`), or an npm semver range (like `^2.95`, `~2.98.0`, `2.x`,
+`>=2.98 <2.99`, or `^1 || ^2`) of the `supabase` CLI can be installed. A range
+installs the highest matching published version. `next` only tracks
 prereleases, so once a major goes GA it can lag behind `latest` until the
 following major's prereleases start:
 
@@ -87,6 +89,13 @@ steps:
       version: v2.stable
 ```
 
+```yaml
+steps:
+  - uses: supabase/setup-cli@v3
+    with:
+      version: ^2.95
+```
+
 Run `supabase db start` to execute all migrations on a fresh database:
 
 ```yaml
@@ -105,9 +114,9 @@ on Windows and macOS runners.
 
 The action supports the following inputs:
 
-| Name      | Type   | Description                                                                | Default                           | Required |
-| --------- | ------ | -------------------------------------------------------------------------- | --------------------------------- | -------- |
-| `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, or fixed npm version | Root lockfile version or `latest` | false    |
+| Name      | Type   | Description                                                                              | Default                           | Required |
+| --------- | ------ | ---------------------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `version` | String | Supabase CLI `latest`, `beta`, `next`, `v<N>.stable`, fixed npm version, or semver range | Root lockfile version or `latest` | false    |
 
 ## Outputs
 

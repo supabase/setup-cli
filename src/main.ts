@@ -27,6 +27,8 @@ const INSTALL_LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall"] as co
 const SUPPORTED_DIST_TAGS = new Set([DEFAULT_VERSION, "beta", "next"]);
 const MAINTENANCE_DIST_TAG_PATTERN = /^v\d+\.stable$/;
 const CONCRETE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const RANGE_TOKEN_PATTERN =
+  /^(?:[<>]=?|=|\^|~)?v?(?:\d+|[xX*])(?:\.(?:\d+|[xX*])){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const CONCRETE_VERSION_EXTRACT_PATTERN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/;
 
 type PackageResolution = {
@@ -114,6 +116,23 @@ function normalizeVersion(version: string): string {
   return version.replace(/^v/i, "");
 }
 
+/** Recognizes npm semver ranges (^2.95, 2.x, >=2.98 <2.99, 2.90.0 - 2.98.0, ^1 || ^2) by syntax. */
+function isVersionRange(version: string): boolean {
+  if (CONCRETE_VERSION_PATTERN.test(version)) {
+    return false;
+  }
+
+  return version.split("||").every((clause) => {
+    const tokens = clause.split(/\s+/).filter(Boolean);
+    return (
+      tokens.length > 0 &&
+      tokens[0] !== "-" &&
+      tokens[tokens.length - 1] !== "-" &&
+      tokens.every((token) => token === "-" || RANGE_TOKEN_PATTERN.test(token))
+    );
+  });
+}
+
 function normalizeSupportedVersion(version: string): string {
   const trimmedVersion = version.trim();
   const distTag = trimmedVersion.toLowerCase();
@@ -132,8 +151,12 @@ function normalizeSupportedVersion(version: string): string {
     return normalizedVersion;
   }
 
+  if (isVersionRange(trimmedVersion)) {
+    return trimmedVersion;
+  }
+
   throw new Error(
-    `Unsupported Supabase CLI version "${version}". Use latest, beta, next, v<N>.stable (like v2.stable), or a fixed npm package version like 2.101.0.`,
+    `Unsupported Supabase CLI version "${version}". Use latest, beta, next, v<N>.stable (like v2.stable), a fixed npm package version like 2.101.0, or a semver range like ^2.95 or 2.x.`,
   );
 }
 
@@ -532,8 +555,42 @@ async function installGitHubReleaseInstead(
   }
 }
 
+/** Resolves a semver range to the highest published version that satisfies it. */
+async function resolveVersionRange(resolution: PackageResolution): Promise<PackageResolution> {
+  const output = await runNpm(["view", resolution.spec, "version", "--json", "--offline=false"]);
+  const parsed: unknown = output.trim() ? JSON.parse(output) : [];
+  const candidates = (Array.isArray(parsed) ? parsed : [parsed]).filter(
+    (candidate): candidate is string =>
+      typeof candidate === "string" && CONCRETE_VERSION_PATTERN.test(candidate),
+  );
+  const version = candidates.reduce<string | null>(
+    (highest, candidate) =>
+      highest === null || semver.order(candidate, highest) > 0 ? candidate : highest,
+    null,
+  );
+
+  if (!version) {
+    throw new Error(`No published Supabase CLI version matches "${resolution.version}"`);
+  }
+
+  core.info(`Resolved Supabase CLI version "${resolution.version}" to ${version}`);
+  return { ...resolution, spec: `${NPM_PACKAGE}@${version}`, version };
+}
+
 /** Installs from npm, falling back to the GitHub release when npm cannot produce a working CLI. */
-export async function installCli(resolution: PackageResolution): Promise<Installation> {
+export async function installCli(requested: PackageResolution): Promise<Installation> {
+  let resolution = requested;
+  if (isVersionRange(requested.version)) {
+    try {
+      resolution = await resolveVersionRange(requested);
+    } catch (error) {
+      if (/\bE404\b|No match found/.test(errorMessage(error))) {
+        throw new Error(`No published Supabase CLI version matches "${requested.version}"`);
+      }
+      throw error;
+    }
+  }
+
   let metadata: PackageMetadata;
   try {
     metadata = await getPackageMetadata(resolution);
