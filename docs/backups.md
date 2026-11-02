@@ -28,11 +28,11 @@ jobs:
         with:
           version: latest
       - name: Backup roles
-        run: supabase db dump --db-url "$supabase_db_url" -f roles.sql --role-only
+        run: supabase db dump --remote="$supabase_db_url" -f roles.sql --role-only
       - name: Backup schema
-        run: supabase db dump --db-url "$supabase_db_url" -f schema.sql
+        run: supabase db dump --remote="$supabase_db_url" -f schema.sql
       - name: Backup data
-        run: supabase db dump --db-url "$supabase_db_url" -f data.sql --data-only --use-copy -x "storage.buckets_vectors" -x "storage.vector_indexes"
+        run: supabase db dump --remote="$supabase_db_url" -f data.sql --data-only --use-copy -x "storage.buckets_vectors" -x "storage.vector_indexes"
 ```
 ## Periodic Backups Workflow
 
@@ -70,11 +70,11 @@ jobs:
         with:
           version: latest
       - name: Backup roles
-        run: supabase db dump --db-url "$supabase_db_url" -f roles.sql --role-only
+        run: supabase db dump --remote="$supabase_db_url" -f roles.sql --role-only
       - name: Backup schema
-        run: supabase db dump --db-url "$supabase_db_url" -f schema.sql
+        run: supabase db dump --remote="$supabase_db_url" -f schema.sql
       - name: Backup data
-        run: supabase db dump --db-url "$supabase_db_url" -f data.sql --data-only --use-copy -x "storage.buckets_vectors" -x "storage.vector_indexes"
+        run: supabase db dump --remote="$supabase_db_url" -f data.sql --data-only --use-copy -x "storage.buckets_vectors" -x "storage.vector_indexes"
 
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -106,4 +106,3 @@ To catch problems like this when the backup runs, add a step at the end of the j
 
 - Backing up and restoring your project: [Backup and Restore using the CLI](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore)
 - Daily backups and Point-in-Time Recovery: [Database Backups](https://supabase.com/docs/guides/platform/backups)
-- Scheduled backups to your own S3, R2, or B2 bucket with restore checks: [Supabase backups with GitHub Actions](https://backupdrill.com/guides/supabase-backup-github-actions)
