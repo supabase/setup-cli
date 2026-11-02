@@ -199,7 +199,7 @@ steps:
 ## Faster local stack (experimental)
 
 Supabase CLI v3 includes an experimental local stack that starts much faster
-than the default Docker setup. On `ubuntu-latest`, it answers API requests
+than the default one. On `ubuntu-latest`, it answers API requests
 about 20s after `supabase start`, compared to about 85s for the default stack
 ([benchmark](https://github.com/jgoux/setup-cli-testing/actions/runs/41458685893)).
 
@@ -214,7 +214,7 @@ Without a `config.toml`, set `SUPABASE_EXPERIMENTAL_STACK=1` for the job
 instead. `supabase init` is not needed: `supabase start` runs the stack with
 default settings.
 
-Then start it with the native runtime and export its env vars for your tests:
+Then start it and export its env vars for your tests:
 
 ```yaml
 steps:
@@ -222,7 +222,7 @@ steps:
   - uses: supabase/setup-cli@v3
     with:
       version: ^3
-  - run: supabase start --runtime native
+  - run: supabase start
   - name: Export local Supabase env vars
     run: |
       supabase status --env \
@@ -232,13 +232,10 @@ steps:
   - run: bun test
 ```
 
-- The native runtime needs Linux on amd64 or arm64 with glibc 2.35+
-  (`ubuntu-22.04` or later), or macOS 14+ on Apple silicon. It doesn't run as
-  root: in a root CI container, set `SUPABASE_NATIVE_POSTGRES_USER` to a
-  non-root account. See the
-  [native runtime requirements](https://supabase.com/docs/guides/local-development/docker-and-native-runtimes#native-runtime-requirements).
-  Without `--runtime`, the stack uses Docker when it is available, which is
-  about as fast on `ubuntu-latest`.
+- `supabase start` runs the stack on Docker when it is available. On runners
+  without Docker, such as `macos-latest`, use `supabase start --runtime native`
+  (see the
+  [native runtime requirements](https://supabase.com/docs/guides/local-development/docker-and-native-runtimes#native-runtime-requirements)).
 - Ports that `config.toml` doesn't set are picked per project, so read URLs
   and keys from `supabase status --env` instead of hard-coding
   `127.0.0.1:54321`. Ports a config sets explicitly, like those written by
