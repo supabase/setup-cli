@@ -196,6 +196,51 @@ steps:
   - run: bun test
 ```
 
+## Faster local stack (experimental)
+
+Supabase CLI v3 includes an experimental local stack that starts much faster
+than the default Docker setup. On `ubuntu-latest`, it answers API requests
+about 20s after `supabase start`, compared to about 85s for the default stack
+([benchmark](https://github.com/jgoux/setup-cli-testing/actions/runs/41458685893)).
+
+Enable it in `supabase/config.toml`, or create a new project with
+`SUPABASE_EXPERIMENTAL_STACK=1 supabase init`:
+
+```toml
+[experimental]
+stack = true
+```
+
+Then start it with the native runtime and export its env vars for your tests:
+
+```yaml
+steps:
+  - uses: actions/checkout@v6
+  - uses: supabase/setup-cli@v3
+    with:
+      version: ^3
+  - run: supabase start --runtime native
+  - name: Export local Supabase env vars
+    run: |
+      supabase status --env \
+        --override-name API_URL=SUPABASE_URL \
+        --override-name SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY \
+        >> .env.test
+  - run: bun test
+```
+
+- The native runtime needs Linux with glibc 2.35+ (`ubuntu-22.04` or later) or
+  macOS 14+ on Apple silicon. Without `--runtime`, the stack uses Docker when
+  it is available, which is about as fast on `ubuntu-latest`.
+- Ports are assigned per project, so read URLs and keys from
+  `supabase status --env` instead of hard-coding `127.0.0.1:54321`.
+- Commit `supabase/supabase.lock`. It pins the services the stack downloads,
+  and when `CI` is set, `supabase start` fails instead of updating an
+  out-of-date lock.
+- Services other than Postgres start on their first request.
+- Caching the downloaded services between runs is not needed: restoring them
+  from the Actions cache takes about as long as downloading them.
+
 ## Develop
 
 After you've cloned the repository to your local machine or codespace, you'll
