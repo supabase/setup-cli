@@ -25,7 +25,9 @@ jobs:
   check-licenses:
     if: ${{ github.event_name != 'workflow_dispatch' }}
     name: Licensed
-    runs-on: ubuntu-latest
+    # licensed needs the rugged gem, whose vendored libgit2 fails to build on
+    # ubuntu-26.04 (the current ubuntu-latest).
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -94,7 +96,9 @@ jobs:
   update-licenses:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     name: Update Licenses
-    runs-on: ubuntu-latest
+    # licensed needs the rugged gem, whose vendored libgit2 fails to build on
+    # ubuntu-26.04 (the current ubuntu-latest).
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
