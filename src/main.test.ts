@@ -50,8 +50,7 @@ afterEach(() => {
   delete process.env.FAKE_NPM_PREFIX_CONFIG_LOG;
   delete process.env.FAKE_NPM_SCRIPTS;
   delete process.env.FAKE_NPM_VIEW_ERROR;
-  delete process.env.FAKE_NPM_RANGE_RESULT;
-  delete process.env.FAKE_NPM_RANGE_ERROR;
+  delete process.env.FAKE_NPM_VIEW_RESULT;
   delete process.env.SETUP_CLI_TEST_WORKSPACE;
   delete process.env.SUPABASE_SETUP_CLI_NPM;
 
@@ -198,19 +197,14 @@ function recordConfig(configPath) {
 if (args[0] === "view") {
   recordConfig(path.join(process.cwd(), ".npmrc"));
 
-  if (!args.includes("bin") && process.env.FAKE_NPM_RANGE_RESULT !== undefined) {
-    console.log(process.env.FAKE_NPM_RANGE_RESULT);
-    process.exit(0);
-  }
-
-  if (!args.includes("bin") && process.env.FAKE_NPM_RANGE_ERROR) {
-    console.error(process.env.FAKE_NPM_RANGE_ERROR);
-    process.exit(1);
-  }
-
   if (process.env.FAKE_NPM_VIEW_ERROR) {
     console.error(process.env.FAKE_NPM_VIEW_ERROR);
     process.exit(1);
+  }
+
+  if (process.env.FAKE_NPM_VIEW_RESULT !== undefined) {
+    console.log(process.env.FAKE_NPM_VIEW_RESULT);
+    process.exit(0);
   }
 
   const bin =
@@ -355,12 +349,34 @@ function readNpmPrefixConfigs(): Array<string | null> {
     .map((line) => JSON.parse(line) as string | null);
 }
 
-function viewRangeCall(spec: string): string[] {
-  return ["view", spec, "version", "--json", "--offline=false"];
+function viewMetadataCall(spec: string): string[] {
+  return [
+    "view",
+    spec,
+    "version",
+    "bin",
+    "scripts",
+    "dist.integrity",
+    "deprecated",
+    "dist-tags",
+    "--json",
+    "--offline=false",
+  ];
 }
 
-function viewMetadataCall(spec: string): string[] {
-  return ["view", spec, "version", "bin", "scripts", "dist.integrity", "--json", "--offline=false"];
+/** Sets the manifests the fake npm prints for a range lookup, one per published version. */
+function setViewManifests(
+  versions: Array<string | { version: string; deprecated?: string }>,
+  latest?: string,
+): void {
+  process.env.FAKE_NPM_VIEW_RESULT = JSON.stringify(
+    versions.map((entry) => ({
+      ...(typeof entry === "string" ? { version: entry } : entry),
+      bin: { supabase: "dist/supabase.js" },
+      "dist-tags": { latest: latest ?? "2.101.0" },
+      "dist.integrity": "sha512-test",
+    })),
+  );
 }
 
 function createActionSpies(inputVersion: string) {
@@ -521,12 +537,25 @@ test("accepts npm semver ranges as version selectors", async () => {
     "2.x",
     "2.98.*",
     "2",
-    "v2",
     "2.90.0 - 2.98.0",
     ">=2.98 <2.99",
     "^1 || ^2",
   ]) {
     expect(resolvePackage(` ${range} `)).toEqual({ spec: `supabase@${range}`, version: range });
+  }
+});
+
+test("normalizes operator spacing and v prefixes in ranges", async () => {
+  const { resolvePackage } = await getMainModule();
+
+  for (const [input, normalized] of [
+    ["v2", "2"],
+    ["V2.x", "2.x"],
+    ["^v2.95", "^2.95"],
+    [">= 2.98 < 2.99", ">=2.98 <2.99"],
+    ["^ 1 || ~ v2.98", "^1 || ~2.98"],
+  ] as const) {
+    expect(resolvePackage(input)).toEqual({ spec: `supabase@${normalized}`, version: normalized });
   }
 });
 
@@ -1003,7 +1032,7 @@ test("fails without a GitHub release fallback when npm cannot resolve a dist-tag
 
 test("installs the highest npm version that satisfies a caret range", async () => {
   const logPath = installFakeNpm("supabase 2.98.2");
-  process.env.FAKE_NPM_RANGE_RESULT = JSON.stringify(["2.95.0", "2.98.2", "2.97.10", "2.98.1"]);
+  setViewManifests(["2.95.0", "2.98.2", "2.97.10", "2.98.1"]);
   const spies = createActionSpies("^2.95");
   const { run } = await getMainModule();
 
@@ -1014,44 +1043,99 @@ test("installs the highest npm version that satisfies a caret range", async () =
   expect(spies.setOutput).toHaveBeenCalledWith("version", "supabase 2.98.2");
   expect(spies.setOutput).toHaveBeenCalledWith("install-source", "npm");
   const calls = readNpmCalls(logPath);
-  expect(calls[0]).toEqual(viewRangeCall("supabase@^2.95"));
-  expect(calls[1]).toEqual(viewMetadataCall("supabase@2.98.2"));
-  expect(calls[2]).toContain("supabase@2.98.2");
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toEqual(viewMetadataCall("supabase@^2.95"));
+  expect(calls[1]).toContain("supabase@2.98.2");
 });
 
-test("accepts x-ranges and comparator ranges", async () => {
-  for (const range of ["2.x", ">=2.98 <2.99"]) {
+test("passes ranges to npm as one argument and normalizes them first", async () => {
+  for (const [input, spec] of [
+    ["2.x", "2.x"],
+    ["^1 || ^2", "^1 || ^2"],
+    ["2.90.0 - 2.98.0", "2.90.0 - 2.98.0"],
+    [">= 2.98 < 2.99", ">=2.98 <2.99"],
+    ["V2.x", "2.x"],
+  ] as const) {
     const logPath = installFakeNpm("supabase 2.98.1");
-    process.env.FAKE_NPM_RANGE_RESULT = JSON.stringify(["2.98.0", "2.98.1"]);
-    const spies = createActionSpies(range);
+    setViewManifests(["2.98.0", "2.98.1"]);
+    const spies = createActionSpies(input);
     const { run } = await getMainModule();
 
     await run();
 
     expect(spies.setFailed).not.toHaveBeenCalled();
-    expect(readNpmCalls(logPath)[0]).toEqual(viewRangeCall(`supabase@${range}`));
-    expect(readNpmCalls(logPath)[1]).toEqual(viewMetadataCall("supabase@2.98.1"));
+    expect(spies.info).toHaveBeenCalledWith(`Resolved Supabase CLI version "${spec}" to 2.98.1`);
+    expect(readNpmCalls(logPath)[0]).toEqual(viewMetadataCall(`supabase@${spec}`));
+    expect(readNpmCalls(logPath)[1]).toContain("supabase@2.98.1");
     expect(spies.setOutput).toHaveBeenCalledWith("install-source", "npm");
   }
 });
 
-test("resolves a range that npm reports as a single JSON string", async () => {
+test("resolves a range that npm reports as a single manifest", async () => {
   const logPath = installFakeNpm("supabase 2.98.0");
-  process.env.FAKE_NPM_RANGE_RESULT = JSON.stringify("2.98.0");
+  process.env.FAKE_NPM_VIEW_RESULT = JSON.stringify({
+    version: "2.98.0",
+    bin: { supabase: "dist/supabase.js" },
+    "dist-tags": { latest: "2.101.0" },
+    "dist.integrity": "sha512-test",
+  });
   const spies = createActionSpies("~2.98.0");
   const { run } = await getMainModule();
 
   await run();
 
   expect(spies.setFailed).not.toHaveBeenCalled();
-  expect(readNpmCalls(logPath)[1]).toEqual(viewMetadataCall("supabase@2.98.0"));
+  expect(readNpmCalls(logPath)[1]).toContain("supabase@2.98.0");
   expect(spies.setOutput).toHaveBeenCalledWith("install-source", "npm");
+});
+
+test("picks npm's latest when it satisfies a range even if a higher version matches", async () => {
+  const logPath = installFakeNpm("supabase 2.98.1");
+  setViewManifests(["2.98.0", "2.98.1", "2.99.0", "2.100.0-beta.1"], "2.98.1");
+  const spies = createActionSpies("2.x");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(readNpmCalls(logPath)[1]).toContain("supabase@2.98.1");
+});
+
+test("skips deprecated versions when picking from a range", async () => {
+  for (const [versions, picked] of [
+    [
+      [
+        { version: "2.98.0" },
+        { version: "2.98.1" },
+        { version: "2.98.2", deprecated: "broken release" },
+      ],
+      "2.98.1",
+    ],
+    [
+      [
+        { version: "2.98.0", deprecated: "broken release" },
+        { version: "2.98.2", deprecated: "broken release" },
+        { version: "2.98.1", deprecated: "broken release" },
+      ],
+      "2.98.2",
+    ],
+  ] as const) {
+    const logPath = installFakeNpm(`supabase ${picked}`);
+    setViewManifests([...versions], "2.98.2");
+    const spies = createActionSpies("~2.98.0");
+    const { run } = await getMainModule();
+
+    await run();
+
+    expect(spies.setFailed).not.toHaveBeenCalled();
+    expect(readNpmCalls(logPath)[1]).toContain(`supabase@${picked}`);
+  }
 });
 
 test("fails without a GitHub release fallback when no version satisfies a range", async () => {
   installFakeNpm("supabase 2.101.0");
-  process.env.FAKE_NPM_RANGE_ERROR =
-    "npm error code E404\nnpm error No match found for version ^99";
+  process.env.FAKE_NPM_VIEW_ERROR =
+    "npm error code E404\nnpm error 404 No match found for version ^99";
   const release = serveRelease("2.101.0", {});
   const spies = createActionSpies("^99");
   const { run } = await getMainModule();
@@ -1062,30 +1146,22 @@ test("fails without a GitHub release fallback when no version satisfies a range"
   expect(release.requested).toEqual([]);
 });
 
-test("fails when npm returns no versions for a range", async () => {
-  installFakeNpm("supabase 2.101.0");
-  process.env.FAKE_NPM_RANGE_RESULT = "";
-  const release = serveRelease("2.101.0", {});
-  const spies = createActionSpies("^99");
-  const { run } = await getMainModule();
+test("rethrows other npm errors for a range unchanged", async () => {
+  for (const error of [
+    "npm error code ETIMEDOUT",
+    "npm error code E404\nnpm error 404 'supabase@^2.95' is not in this registry.",
+  ]) {
+    installFakeNpm("supabase 2.101.0");
+    process.env.FAKE_NPM_VIEW_ERROR = error;
+    const release = serveRelease("2.101.0", {});
+    const spies = createActionSpies("^2.95");
+    const { run } = await getMainModule();
 
-  await run();
+    await run();
 
-  expect(spies.setFailed).toHaveBeenCalledWith('No published Supabase CLI version matches "^99"');
-  expect(release.requested).toEqual([]);
-});
-
-test("fails without a GitHub release fallback when npm cannot resolve a range", async () => {
-  installFakeNpm("supabase 2.101.0");
-  process.env.FAKE_NPM_RANGE_ERROR = "npm error code ETIMEDOUT";
-  const release = serveRelease("2.101.0", {});
-  const spies = createActionSpies("^2.95");
-  const { run } = await getMainModule();
-
-  await run();
-
-  expect(spies.setFailed).toHaveBeenCalledWith("npm error code ETIMEDOUT");
-  expect(release.requested).toEqual([]);
+    expect(spies.setFailed).toHaveBeenCalledWith(error);
+    expect(release.requested).toEqual([]);
+  }
 });
 
 test("rejects a GitHub release archive that does not match its checksum", async () => {

@@ -84,9 +84,9 @@ A fixed npm-published version, `latest`, `beta`, `next` (upcoming major
 prereleases), `v<N>.stable` (maintenance line of an older major, like
 `v2.stable`), or an npm semver range (like `^2.95`, `~2.98.0`, `2.x`,
 `>=2.98 <2.99`, or `^1 || ^2`) of the `supabase` CLI can be installed. A range
-installs the highest matching published version. `next` only tracks
-prereleases, so once a major goes GA it can lag behind `latest` until the
-following major's prereleases start:
+installs the version npm picks: `latest` if it matches, otherwise the highest
+non-deprecated match. `next` only tracks prereleases, so once a major goes GA
+it can lag behind `latest` until the following major's prereleases start:
 
 ```yaml
 steps:
