@@ -1,5 +1,4 @@
 import {getDownloadUrl} from '../src/utils'
-import {CLI_CONFIG_REGISTRY} from '../src/main'
 import * as os from 'os'
 import * as process from 'process'
 import * as cp from 'child_process'
@@ -7,6 +6,10 @@ import * as path from 'path'
 import * as fs from 'fs'
 import * as yaml from 'js-yaml'
 import {expect, test} from '@jest/globals'
+
+// Importing src/main would run the action in this process, so match its
+// exported variable name here instead.
+const CLI_CONFIG_REGISTRY = 'SUPABASE_INTERNAL_IMAGE_REGISTRY'
 
 test('gets download url to binary', async () => {
   const url = await getDownloadUrl('1.28.0')
