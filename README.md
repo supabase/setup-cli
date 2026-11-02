@@ -203,13 +203,16 @@ than the default Docker setup. On `ubuntu-latest`, it answers API requests
 about 20s after `supabase start`, compared to about 85s for the default stack
 ([benchmark](https://github.com/jgoux/setup-cli-testing/actions/runs/41458685893)).
 
-Enable it in `supabase/config.toml`, or create a new project with
-`SUPABASE_EXPERIMENTAL_STACK=1 supabase init`:
+Enable it in `supabase/config.toml`:
 
 ```toml
 [experimental]
 stack = true
 ```
+
+Without a `config.toml`, set `SUPABASE_EXPERIMENTAL_STACK=1` for the job
+instead. `supabase init` is not needed: `supabase start` runs the stack with
+default settings.
 
 Then start it with the native runtime and export its env vars for your tests:
 
@@ -232,11 +235,15 @@ steps:
 - The native runtime needs Linux with glibc 2.35+ (`ubuntu-22.04` or later) or
   macOS 14+ on Apple silicon. Without `--runtime`, the stack uses Docker when
   it is available, which is about as fast on `ubuntu-latest`.
-- Ports are assigned per project, so read URLs and keys from
-  `supabase status --env` instead of hard-coding `127.0.0.1:54321`.
-- Commit `supabase/supabase.lock`. It pins the services the stack downloads,
-  and when `CI` is set, `supabase start` fails instead of updating an
-  out-of-date lock.
+- Ports that `config.toml` doesn't set are picked per project, so read URLs
+  and keys from `supabase status --env` instead of hard-coding
+  `127.0.0.1:54321`. Ports a config sets explicitly, like those written by
+  `supabase init` before the stack was enabled, are kept as is.
+- With a `config.toml`, commit the `supabase/supabase.lock` that
+  `supabase start` writes. It pins the services the stack downloads, and when
+  `CI` is set, `supabase start` fails instead of updating an out-of-date lock.
+- `supabase start` rejects some settings the stack does not support yet, such
+  as `api.tls` or a `db.major_version` other than 15 or 17.
 - Services other than Postgres start on their first request.
 - Caching the downloaded services between runs is not needed: restoring them
   from the Actions cache takes about as long as downloading them.
