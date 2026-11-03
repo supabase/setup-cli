@@ -48,7 +48,12 @@ jobs:
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > changed-files.txt
           elif [[ "$EVENT_NAME" == "merge_group" ]]; then
-            gh api "repos/${REPOSITORY}/compare/${MERGE_BASE_SHA}...${MERGE_HEAD_SHA}" --paginate --jq '.files[].filename' > changed-files.txt
+            gh api "repos/${REPOSITORY}/compare/${MERGE_BASE_SHA}...${MERGE_HEAD_SHA}" --jq '.files[].filename' > changed-files.txt
+            # The compare API lists at most 300 files; check everything when the list may be cut off.
+            if (( $(wc -l < changed-files.txt) >= 300 )); then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0

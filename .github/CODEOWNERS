@@ -4,6 +4,7 @@
 # Files that Dependabot updates. Either owner satisfies code-owner review; `supabase-oss`
 # approves only Dependabot PRs, through dependabot.yml.
 /.github/workflows/*.yml @supabase/cli @supabase-oss
+/action.yml @supabase/cli @supabase-oss
 /package.json @supabase/cli @supabase-oss
 /bun.lock @supabase/cli @supabase-oss
 
