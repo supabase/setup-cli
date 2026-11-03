@@ -6,6 +6,7 @@ name: Licensed
 
 on:
   pull_request:
+  merge_group:
   push:
     branches:
       - main
@@ -38,15 +39,21 @@ jobs:
         id: license-inputs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > changed-files.txt
+          elif [[ "$EVENT_NAME" == "merge_group" ]]; then
+            gh api "repos/${REPOSITORY}/compare/${MERGE_BASE_SHA}...${MERGE_HEAD_SHA}" --paginate --jq '.files[].filename' > changed-files.txt
+          else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > changed-files.txt
           if grep -Eq '^(\.github/workflows/licensed\.yml|\.licensed\.yml|\.licenses/.*|bun\.lock|package\.json)$' changed-files.txt; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else

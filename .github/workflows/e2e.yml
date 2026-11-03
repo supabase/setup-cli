@@ -7,6 +7,7 @@ on:
       - reopened
       - ready_for_review
       - converted_to_draft
+  merge_group:
   push:
     branches:
       - main
@@ -69,7 +70,7 @@ jobs:
       - run: supabase start
 
   e2e-check:
-    if: ${{ always() && github.event_name == 'pull_request' }}
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     name: E2E
     runs-on: ubuntu-latest
     needs: [e2e]

@@ -1,47 +1,67 @@
 # Adapted from https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions#enable-auto-merge-on-a-pull-request
 name: Dependabot auto-merge
 
-on: pull_request
+on:
+  # Dependabot-triggered pull_request runs get no Actions or environment secrets. Only this
+  # event lets the job use the auto-approve environment's secret. The job never checks out or
+  # runs code from the pull request.
+  # jactionlint ignore=dangerous-triggers
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-permissions:
-  pull-requests: write
-  contents: write
+permissions: {}
 
 jobs:
   dependabot:
+    name: Approve and enable auto-merge
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Only act on PRs opened by Dependabot from branches in this repository.
-    if: github.actor == 'dependabot[bot]' && github.repository == github.event.pull_request.head.repo.full_name
+    # The first condition checks who opened the pull request. The second checks who caused this
+    # event, so a person pushing to a Dependabot pull request does not get it approved. Only
+    # branches in this repository qualify.
+    # jactionlint ignore=bot-conditions
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.sender.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    # Holds `AUTO_APPROVE_PR_PAT`; the environment only deploys from the default branch.
+    environment: auto-approve
+    permissions:
+      pull-requests: write
+      contents: write
     steps:
+      # pull_request_target is safe here because this job never checks out PR code.
       # Metadata drives the non-major gating used for approval and auto-merge.
       - id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Generate token
-        id: app-token
-        if: ${{ steps.meta.outputs.update-type == null || steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
+      # The org ruleset requires a code-owner review, which an app approval cannot satisfy.
+      # `supabase-oss` is a co-owner of the files Dependabot updates (see CODEOWNERS). A rewritten
+      # PR keeps its approval; skipping it avoids stacking a review per push.
       - name: Approve a PR
         if: ${{ steps.meta.outputs.update-type == null || steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
-        run: gh pr review --approve "$PR_URL"
+        run: |
+          set -euo pipefail
+          decision="$(GH_TOKEN="$READ_TOKEN" gh pr view --repo "$GITHUB_REPOSITORY" "$PR_NUMBER" --json reviewDecision --jq .reviewDecision)"
+          if [ "$decision" != "APPROVED" ]; then
+            gh pr review --approve --repo "$GITHUB_REPOSITORY" "$PR_NUMBER"
+          fi
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.AUTO_APPROVE_PR_PAT }}
+          READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Enable auto-merge for Dependabot PRs
         if: ${{ steps.meta.outputs.update-type == null || steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: gh pr merge --auto --squash --repo "$GITHUB_REPOSITORY" "$PR_NUMBER"
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
