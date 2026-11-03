@@ -32,9 +32,10 @@ jobs:
       !github.event.pull_request.draft
     # Holds `AUTO_APPROVE_PR_PAT`; the environment only deploys from the default branch.
     environment: auto-approve
+    # The built-in token only reads; the PAT approves and the app token enables auto-merge.
     permissions:
-      pull-requests: write
-      contents: write
+      pull-requests: read
+      contents: read
     steps:
       # pull_request_target is safe here because this job never checks out PR code.
       # Metadata drives the non-major gating used for approval and auto-merge.
@@ -59,9 +60,21 @@ jobs:
           READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
+      # The built-in GITHUB_TOKEN cannot add pull requests to a merge queue, and the merge group
+      # it would create would not trigger the required checks.
+      - name: Generate token
+        id: app-token
+        if: ${{ steps.meta.outputs.update-type == null || steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Enable auto-merge for Dependabot PRs
         if: ${{ steps.meta.outputs.update-type == null || steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
         run: gh pr merge --auto --squash --repo "$GITHUB_REPOSITORY" "$PR_NUMBER"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
