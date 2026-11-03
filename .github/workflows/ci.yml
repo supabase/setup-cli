@@ -8,6 +8,7 @@ on:
       - reopened
       - ready_for_review
       - converted_to_draft
+  merge_group:
   push:
     branches:
       - main
@@ -85,7 +86,7 @@ jobs:
           supabase -h
 
   ci:
-    if: ${{ always() && github.event_name == 'pull_request' }}
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     name: CI
     runs-on: ubuntu-latest
     needs: [validate, test, github-release-fallback]
