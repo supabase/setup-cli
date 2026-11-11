@@ -1,9 +1,13 @@
-import { semver } from "bun";
 import * as core from "@actions/core";
+import * as exec from "@actions/exec";
+import * as io from "@actions/io";
+import { load as parseYaml } from "js-yaml";
+import semver from "semver";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 export const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const REGISTRY_VERSION = "1.28.0";
@@ -13,6 +17,9 @@ const NPM_PACKAGE = "supabase";
 const NPM_EXECUTABLE_ENV = "SUPABASE_SETUP_CLI_NPM";
 const MUSL_ENV = "SUPABASE_SETUP_CLI_MUSL";
 const GITHUB_RELEASES_URL = "https://github.com/supabase/cli/releases/download";
+const NPM_REGISTRY_URL = "https://registry.npmjs.org";
+const REGISTRY_TIMEOUT_MS = 60 * 1000;
+const MUSL_RUNTIME_PACKAGES = ["libstdc++", "libgcc"];
 const RELEASE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const RELEASE_PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: "darwin",
@@ -62,6 +69,14 @@ type PackageMetadata = {
   "dist.integrity"?: unknown;
   "dist-tags"?: unknown;
   deprecated?: unknown;
+};
+
+type RegistryPackument = {
+  "dist-tags"?: Record<string, string>;
+  versions?: Record<
+    string,
+    { version?: unknown; bin?: unknown; deprecated?: unknown; dist?: { integrity?: unknown } }
+  >;
 };
 
 type BunLock = {
@@ -232,7 +247,7 @@ function detectResolutionFromPnpmLock(workspaceRoot: string): PackageResolution 
   }
 
   try {
-    const lockfile = Bun.YAML.parse(text) as PnpmLock;
+    const lockfile = parseYaml(text) as PnpmLock;
     const rootImporter = lockfile.importers?.["."];
     const dependency =
       rootImporter?.dependencies?.[NPM_PACKAGE] ?? rootImporter?.devDependencies?.[NPM_PACKAGE];
@@ -331,7 +346,7 @@ function pickManifest(manifests: PackageMetadata[]): PackageMetadata | undefined
 
   const nonDeprecated = candidates.filter((manifest) => !isDeprecated(manifest));
   const pool = nonDeprecated.length > 0 ? nonDeprecated : candidates;
-  const [highest] = pool.sort((a, b) => semver.order(b.version as string, a.version as string));
+  const [highest] = pool.sort((a, b) => semver.compare(b.version as string, a.version as string));
 
   return highest;
 }
@@ -360,6 +375,44 @@ async function getPackageMetadata(resolution: PackageResolution): Promise<Packag
 
   // Without a concrete version, verifyPackageMetadata rejects the manifest with a clear error.
   return pickManifest(manifests) ?? first;
+}
+
+/** Resolves a version from the public npm registry, for runners without npm. */
+async function getRegistryMetadata(resolution: PackageResolution): Promise<PackageMetadata> {
+  const url = `${NPM_REGISTRY_URL}/${NPM_PACKAGE}`;
+  const response = await fetch(url, {
+    headers: { accept: "application/vnd.npm.install-v1+json" },
+    signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Fetching ${url} returned HTTP ${response.status}`);
+  }
+
+  const packument = (await response.json()) as RegistryPackument;
+  const distTags = packument["dist-tags"] ?? {};
+  const manifests: PackageMetadata[] = Object.values(packument.versions ?? {}).map((manifest) => ({
+    version: manifest.version,
+    bin: manifest.bin,
+    deprecated: manifest.deprecated,
+    "dist.integrity": manifest.dist?.integrity,
+    "dist-tags": distTags,
+  }));
+  const taggedVersion = distTags[resolution.version];
+  const matches = manifests.filter((manifest) =>
+    taggedVersion
+      ? manifest.version === taggedVersion
+      : typeof manifest.version === "string" &&
+        CONCRETE_VERSION_PATTERN.test(manifest.version) &&
+        semver.satisfies(manifest.version, resolution.version),
+  );
+  const picked = pickManifest(matches);
+
+  if (!picked) {
+    throw new Error(`No published Supabase CLI version matches "${resolution.version}"`);
+  }
+
+  return picked;
 }
 
 function verifyPackageMetadata(resolution: PackageResolution, metadata: PackageMetadata): string {
@@ -400,17 +453,14 @@ async function runProcess(
   command: string[],
   options: { cwd?: string; failure: string },
 ): Promise<string> {
-  const proc = Bun.spawn(command, {
+  const [executable, ...args] = command as [string, ...string[]];
+  // @actions/exec resolves `.cmd` shims and quotes arguments like `^2 || ^3` safely on Windows.
+  const { exitCode, stdout, stderr } = await exec.getExecOutput(executable, args, {
     cwd: options.cwd,
-    env: process.env,
-    stderr: "pipe",
-    stdout: "pipe",
+    env: process.env as Record<string, string>,
+    ignoreReturnCode: true,
+    silent: true,
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
 
   if (exitCode !== 0) {
     throw new Error(stderr.trim() || options.failure);
@@ -419,9 +469,16 @@ async function runProcess(
   return stdout;
 }
 
+function npmExecutable(): string {
+  return process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
+}
+
+async function hasNpm(): Promise<boolean> {
+  return (await io.which(npmExecutable(), false)) !== "";
+}
+
 async function runNpm(args: string[]): Promise<string> {
-  const executable = process.env[NPM_EXECUTABLE_ENV]?.trim() || "npm";
-  return runProcess([executable, ...args], {
+  return runProcess([npmExecutable(), ...args], {
     cwd: process.env.GITHUB_WORKSPACE?.trim() ?? process.cwd(),
     failure: `npm ${args.join(" ")} failed`,
   });
@@ -543,7 +600,7 @@ async function installGitHubRelease(version: string): Promise<string> {
   const asset = selectReleaseAsset(version, await downloadReleaseChecksums(version), {
     platform: process.platform,
     arch: process.arch,
-    musl: process.env[MUSL_ENV] === "true",
+    musl: isMusl(),
   });
   const response = await fetchReleaseAsset(version, asset.filename);
   if (!response.ok) {
@@ -551,7 +608,7 @@ async function installGitHubRelease(version: string): Promise<string> {
   }
 
   const archive = new Uint8Array(await response.arrayBuffer());
-  const sha256 = new Bun.CryptoHasher("sha256").update(archive).digest("hex");
+  const sha256 = createHash("sha256").update(archive).digest("hex");
 
   if (sha256 !== asset.sha256) {
     throw new Error(
@@ -561,7 +618,7 @@ async function installGitHubRelease(version: string): Promise<string> {
 
   const installRoot = createInstallRoot();
   const archivePath = path.join(installRoot, asset.filename);
-  await Bun.write(archivePath, archive);
+  await writeFile(archivePath, archive);
   await extractArchive(archivePath, installRoot);
   rmSync(archivePath, { force: true });
 
@@ -597,8 +654,23 @@ async function installGitHubReleaseInstead(
   }
 }
 
+async function installWithoutNpm(requested: PackageResolution): Promise<Installation> {
+  const metadata = await getRegistryMetadata(requested);
+  const version = verifyPackageMetadata(requested, metadata);
+  verifyPackageIntegrity(requested, metadata);
+  core.info(`npm is not available, so installing Supabase CLI v${version} from its GitHub release`);
+
+  const cliPath = await installGitHubRelease(version);
+  const installedVersion = await determineInstalledVersion(cliPath);
+  return { cliPath, installedVersion, source: "github-release" };
+}
+
 /** Installs from npm, falling back to the GitHub release when npm cannot produce a working CLI. */
 export async function installCli(requested: PackageResolution): Promise<Installation> {
+  if (!(await hasNpm())) {
+    return installWithoutNpm(requested);
+  }
+
   let metadata: PackageMetadata;
   try {
     metadata = await getPackageMetadata(requested);
@@ -656,18 +728,78 @@ export async function determineInstalledVersion(cliPath: string): Promise<string
   return version;
 }
 
+/** Detects Linux musl (Alpine), whose CLI release ships as an `.apk`. */
+export function isMusl(): boolean {
+  const override = process.env[MUSL_ENV]?.trim();
+  if (override) {
+    return override === "true";
+  }
+
+  if (process.platform !== "linux") {
+    return false;
+  }
+
+  if (existsSync("/etc/alpine-release")) {
+    return true;
+  }
+
+  const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
+  return !report.header?.glibcVersionRuntime;
+}
+
+/** The musl CLI binary links against libstdc++ and libgcc, which minimal images lack. */
+async function ensureMuslRuntimeLibraries(): Promise<void> {
+  if (!isMusl()) {
+    return;
+  }
+
+  const apk = await io.which("apk", false);
+  if (!apk) {
+    throw new Error(
+      `Linux musl containers need ${MUSL_RUNTIME_PACKAGES.join(" and ")} to run Supabase CLI. Install them before supabase/setup-cli.`,
+    );
+  }
+
+  const missing: string[] = [];
+  for (const pkg of MUSL_RUNTIME_PACKAGES) {
+    const { exitCode } = await exec.getExecOutput(apk, ["info", "-e", pkg], {
+      ignoreReturnCode: true,
+      silent: true,
+    });
+    if (exitCode !== 0) {
+      missing.push(pkg);
+    }
+  }
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  const packages = missing.join(" ");
+  if (process.getuid?.() !== 0) {
+    throw new Error(
+      `Alpine/musl containers need ${packages} to run Supabase CLI. Add 'apk add --no-cache ${packages}' before supabase/setup-cli, or run this job container as root.`,
+    );
+  }
+
+  await runProcess([apk, "add", "--no-cache", ...missing], {
+    failure: `apk add --no-cache ${packages} failed`,
+  });
+}
+
 function shouldUseGhcrRegistry(installedVersion: string): boolean {
   const concreteVersion = extractConcreteVersion(installedVersion);
   return (
     concreteVersion !== null &&
-    semver.order(concreteVersion, REGISTRY_VERSION) >= 0 &&
-    semver.order(concreteVersion, FALLBACK_VERSION) < 0
+    semver.gte(concreteVersion, REGISTRY_VERSION) &&
+    semver.lt(concreteVersion, FALLBACK_VERSION)
   );
 }
 
 export async function run(): Promise<void> {
   try {
     const resolution = resolvePackage(core.getInput("version"));
+    await ensureMuslRuntimeLibraries();
     const { cliPath, installedVersion, source } = await installCli(resolution);
     core.setOutput("version", installedVersion);
     core.setOutput("install-source", source);
@@ -679,8 +811,4 @@ export async function run(): Promise<void> {
   } catch (error) {
     core.setFailed(errorMessage(error));
   }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await run();
 }

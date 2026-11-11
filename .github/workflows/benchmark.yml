@@ -1,0 +1,46 @@
+# Compares how long the setup-cli step takes for the composite (Bun) action on main and the
+# node24 JavaScript action on this branch. Read the step timings from the Jobs API afterwards.
+name: Benchmark
+
+on:
+  push:
+    branches:
+      - kanadgupta/node24-prototype
+    paths:
+      - .github/workflows/benchmark.yml
+      - action.yml
+      - dist/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: "${{ matrix.impl }} ${{ matrix.os }} run ${{ matrix.run }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        impl: [composite, node24]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      # Checked out into a subfolder so npm doesn't run inside this repo's package.json, whose
+      # devEngines would make npm refuse to run.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: action
+          persist-credentials: false
+      - name: setup-cli
+        if: ${{ matrix.impl == 'composite' }}
+        uses: supabase/setup-cli@9f97a8880aff8507123eac41a95501b846a3976f # main, composite + Bun
+        with:
+          version: 2.122.0
+      - name: setup-cli
+        if: ${{ matrix.impl == 'node24' }}
+        uses: ./action
+        with:
+          version: 2.122.0
+      - run: supabase --version

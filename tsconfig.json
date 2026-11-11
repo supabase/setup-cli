@@ -1,4 +1,9 @@
 {
-  "extends": "@tsconfig/bun/tsconfig.json",
-  "include": ["src"]
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src", "rolldown.config.ts"]
 }

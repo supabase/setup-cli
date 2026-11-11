@@ -1,9 +1,13 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, test, vi } from "vitest";
 import * as core from "@actions/core";
+
+vi.mock("@actions/core", { spy: true });
 
 const CLI_CONFIG_REGISTRY = "SUPABASE_INTERNAL_IMAGE_REGISTRY";
 const RELEASES_URL = "https://github.com/supabase/cli/releases/download";
@@ -18,7 +22,8 @@ const tempDirs = new Set<string>();
 let mainModule: typeof import("./main.ts") | null = null;
 
 afterEach(() => {
-  mock.restore();
+  vi.restoreAllMocks();
+  vi.resetAllMocks();
   process.env.PATH = originalPath;
   if (originalNpmUserconfig === undefined) {
     delete process.env.NPM_CONFIG_USERCONFIG;
@@ -53,6 +58,7 @@ afterEach(() => {
   delete process.env.FAKE_NPM_VIEW_RESULT;
   delete process.env.SETUP_CLI_TEST_WORKSPACE;
   delete process.env.SUPABASE_SETUP_CLI_NPM;
+  delete process.env.SUPABASE_SETUP_CLI_MUSL;
 
   for (const dir of tempDirs) {
     rmSync(dir, { force: true, recursive: true });
@@ -381,13 +387,13 @@ function setViewManifests(
 
 function createActionSpies(inputVersion: string) {
   return {
-    addPath: spyOn(core, "addPath").mockImplementation(() => {}),
-    exportVariable: spyOn(core, "exportVariable").mockImplementation(() => {}),
-    getInput: spyOn(core, "getInput").mockReturnValue(inputVersion),
-    info: spyOn(core, "info").mockImplementation(() => {}),
-    setFailed: spyOn(core, "setFailed").mockImplementation(() => {}),
-    setOutput: spyOn(core, "setOutput").mockImplementation(() => {}),
-    warning: spyOn(core, "warning").mockImplementation(() => {}),
+    addPath: vi.mocked(core.addPath).mockImplementation(() => {}),
+    exportVariable: vi.mocked(core.exportVariable).mockImplementation(() => {}),
+    getInput: vi.mocked(core.getInput).mockReturnValue(inputVersion),
+    info: vi.mocked(core.info).mockImplementation(() => {}),
+    setFailed: vi.mocked(core.setFailed).mockImplementation(() => {}),
+    setOutput: vi.mocked(core.setOutput).mockImplementation(() => {}),
+    warning: vi.mocked(core.warning).mockImplementation(() => {}),
   };
 }
 
@@ -412,8 +418,8 @@ function createReleaseArchive(cliVersion: string, binDir = ""): Uint8Array {
   }
 
   const archivePath = path.join(root, "archive.tar.gz");
-  const tar = Bun.spawnSync(["tar", "-czf", archivePath, "-C", contents, "."]);
-  if (tar.exitCode !== 0) {
+  const tar = spawnSync("tar", ["-czf", archivePath, "-C", contents, "."]);
+  if (tar.status !== 0) {
     throw new Error(tar.stderr.toString());
   }
 
@@ -421,14 +427,21 @@ function createReleaseArchive(cliVersion: string, binDir = ""): Uint8Array {
 }
 
 function sha256(bytes: Uint8Array): string {
-  return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
-function serveRelease(version: string, assets: Record<string, string | Uint8Array>) {
+function serveRelease(
+  version: string,
+  assets: Record<string, string | Uint8Array>,
+  otherUrls: Record<string, string> = {},
+) {
   const requested: string[] = [];
-  const responses = new Map(
-    Object.entries(assets).map(([filename, body]) => [releaseUrl(version, filename), body]),
-  );
+  const responses = new Map<string, string | Uint8Array>([
+    ...Object.entries(assets).map(
+      ([filename, body]) => [releaseUrl(version, filename), body] as const,
+    ),
+    ...Object.entries(otherUrls),
+  ]);
 
   const respond = async (input: string | URL | Request) => {
     const url = input instanceof Request ? input.url : String(input);
@@ -436,9 +449,7 @@ function serveRelease(version: string, assets: Record<string, string | Uint8Arra
     const body = responses.get(url);
     return body === undefined ? new Response("Not Found", { status: 404 }) : new Response(body);
   };
-  spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(respond, { preconnect: globalThis.fetch.preconnect }),
-  );
+  vi.spyOn(globalThis, "fetch").mockImplementation(respond);
 
   return { requested };
 }
@@ -1254,4 +1265,71 @@ test("rejects runners that no release archive supports", async () => {
       musl: false,
     }),
   ).toThrow("Supabase CLI releases have no binary for freebsd x64 runners");
+});
+
+test("installs from the GitHub release using the npm registry when npm is missing", async () => {
+  installFakeNpm("supabase 2.101.0");
+  process.env.SUPABASE_SETUP_CLI_NPM = "setup-cli-npm-unavailable";
+  const archiveName = `supabase_2.101.0_${RELEASE_PLATFORM}_${RELEASE_ARCH}.tar.gz`;
+  const archive = createReleaseArchive("2.101.0");
+  const release = serveRelease(
+    "2.101.0",
+    {
+      "checksums.txt": `${sha256(archive)}  ${archiveName}\n`,
+      [archiveName]: archive,
+    },
+    {
+      "https://registry.npmjs.org/supabase": JSON.stringify({
+        "dist-tags": { latest: "2.101.0", beta: "2.102.0-beta.1" },
+        versions: Object.fromEntries(
+          ["2.100.0", "2.101.0", "2.102.0-beta.1", "3.0.0"].map((version) => [
+            version,
+            { version, bin: { supabase: "dist/supabase.js" }, dist: { integrity: "sha512-test" } },
+          ]),
+        ),
+      }),
+    },
+  );
+  const spies = createActionSpies("^2.100");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).not.toHaveBeenCalled();
+  expect(spies.info).toHaveBeenCalledWith(
+    "npm is not available, so installing Supabase CLI v2.101.0 from its GitHub release",
+  );
+  expect(spies.setOutput).toHaveBeenCalledWith("version", "2.101.0");
+  expect(spies.setOutput).toHaveBeenCalledWith("install-source", "github-release");
+  expect(release.requested[0]).toBe("https://registry.npmjs.org/supabase");
+});
+
+test("fails when no published version matches and npm is missing", async () => {
+  installFakeNpm("supabase 2.101.0");
+  process.env.SUPABASE_SETUP_CLI_NPM = "setup-cli-npm-unavailable";
+  serveRelease(
+    "2.101.0",
+    {},
+    {
+      "https://registry.npmjs.org/supabase": JSON.stringify({
+        "dist-tags": { latest: "2.101.0" },
+        versions: { "2.101.0": { version: "2.101.0", bin: "bin/supabase" } },
+      }),
+    },
+  );
+  const spies = createActionSpies("^99");
+  const { run } = await getMainModule();
+
+  await run();
+
+  expect(spies.setFailed).toHaveBeenCalledWith('No published Supabase CLI version matches "^99"');
+});
+
+test("detects musl from the override variable", async () => {
+  const { isMusl } = await getMainModule();
+
+  process.env.SUPABASE_SETUP_CLI_MUSL = "true";
+  expect(isMusl()).toBe(true);
+  process.env.SUPABASE_SETUP_CLI_MUSL = "false";
+  expect(isMusl()).toBe(false);
 });
