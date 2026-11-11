@@ -1,0 +1,66 @@
+# Times each phase of the node24 action's install path on real runners.
+name: Profile
+
+on:
+  push:
+    branches:
+      - kanadgupta/node24-prototype
+    paths:
+      - .github/workflows/profile.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  profile:
+    name: profile ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      VERSION: 2.122.0
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: action
+          persist-credentials: false
+      - name: Time each phase
+        run: |
+          now() { node -e 'process.stdout.write(String(Date.now()))'; }
+          t() {
+            local label=$1; shift
+            local start; start=$(now)
+            "$@" > /dev/null 2>&1; local rc=$?
+            local end; end=$(now)
+            printf 'PHASE|%s|%s|%s\n' "$label" "$(( end - start ))" "$rc"
+          }
+          case "$RUNNER_OS" in
+            Linux) asset="supabase_${VERSION}_linux_amd64.tar.gz"; bin=supabase ;;
+            macOS) asset="supabase_${VERSION}_darwin_arm64.tar.gz"; bin=supabase ;;
+            Windows) asset="supabase_${VERSION}_windows_amd64.tar.gz"; bin=supabase.exe ;;
+          esac
+          base="https://github.com/supabase/cli/releases/download/v${VERSION}"
+          t "node -e 0" node -e 0
+          t "npm --version" npm --version
+          t "load dist/index.js" node -e "import('node:fs').then(fs => fs.readFileSync('action/dist/index.js'))"
+          for i in 1 2; do
+            p="$RUNNER_TEMP/prefix$i"; mkdir -p "$p"
+            t "npm view #$i" npm view "supabase@${VERSION}" version bin scripts dist.integrity deprecated dist-tags --json --offline=false
+            t "npm install #$i" npm install --prefix "$p" --omit=dev --include=optional --no-audit --no-fund --no-package-lock --offline=false --bin-links=true --ignore-scripts=true "supabase@${VERSION}"
+            t "supabase --version (npm shim) #$i" "$p/node_modules/.bin/supabase" --version
+          done
+          r="$RUNNER_TEMP/release"; mkdir -p "$r"
+          t "download release tarball" curl -sSfL -o "$r/cli.tgz" "$base/$asset"
+          t "sha256 release tarball" node -e "const c=require('node:crypto');c.createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex')" "$r/cli.tgz"
+          # Relative paths: Git Bash's GNU tar reads `D:\...` as a remote host.
+          ( cd "$r" && t "extract release tarball" tar -xzf cli.tgz )
+          t "supabase --version (release binary)" "$r/$bin" --version
+          echo "npm package size: $(du -sh "$RUNNER_TEMP/prefix1/node_modules" | cut -f1); tarball: $(du -h "$r/cli.tgz" | cut -f1)"
